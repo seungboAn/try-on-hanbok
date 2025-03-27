@@ -6,6 +6,7 @@ import 'dart:io';
 import '../models/hanbok_image.dart';
 import 'hanbok_service.dart';
 import 'supabase_service.dart';
+import 'package:http/http.dart' as http;
 
 class AppState extends ChangeNotifier {
   // App step tracking
@@ -254,23 +255,99 @@ class AppState extends ChangeNotifier {
       debugPrint("Using source path: $sourcePath");
       debugPrint("Using target path: $targetPath");
       
+      // Call the inference service to generate the image
       final result = await _hanbokService.generateHanbokImage(
         sourcePath,
         targetPath
       );
       
       if (result != null) {
+        // If we got an immediate result (cached), use it directly
         _resultImagePath = result;
         // Move to the result step
         _currentStep = 2;
       } else {
-        _errorMessage = "Failed to generate image. Please try again.";
+        // Otherwise, this indicates a task was submitted and we need to poll for results
+        // Move to the result step which will handle polling
+        _currentStep = 2;
       }
     } catch (e) {
       _errorMessage = "Error generating image: $e";
       debugPrint(_errorMessage);
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  // Poll for task results
+  Future<void> pollTaskResults() async {
+    try {
+      final inferenceService = _hanbokService.getInferenceService();
+      final taskIds = inferenceService.taskIds;
+      
+      if (taskIds.isEmpty) {
+        debugPrint('No task IDs available to poll');
+        return;
+      }
+      
+      // We'll only check the latest task submitted
+      final latestTaskId = taskIds.last;
+      debugPrint('Polling for task ID: $latestTaskId');
+      
+      final result = await inferenceService.checkTaskStatus(latestTaskId);
+      debugPrint('Poll result: ${result.toString()}');
+      
+      if (result['status'] == 'completed' && result['image_url'] != null) {
+        // Add a cache-busting timestamp to the URL
+        String imageUrl = result['image_url'];
+        if (!imageUrl.contains('?')) {
+          imageUrl = '$imageUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+        } else {
+          imageUrl = '$imageUrl&t=${DateTime.now().millisecondsSinceEpoch}';
+        }
+        
+        debugPrint('Task completed! Image URL with cache buster: $imageUrl');
+        
+        // Verify if the image is accessible before updating UI
+        try {
+          final response = await http.head(Uri.parse(imageUrl));
+          debugPrint('Image URL validation status: ${response.statusCode}');
+          
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            debugPrint('Image URL is valid and accessible');
+            _resultImagePath = imageUrl;
+            _isLoading = false;
+            notifyListeners();
+            debugPrint('State updated with result image path');
+          } else {
+            debugPrint('Image URL returned error status ${response.statusCode}, retrying...');
+            // Try an alternative way - add metadata to URL or retry with original URL
+            final originalUrl = result['image_url'];
+            _resultImagePath = originalUrl;
+            _isLoading = false;
+            notifyListeners();
+          }
+        } catch (validateError) {
+          debugPrint('Error validating image URL: $validateError');
+          // Still use the URL despite validation error
+          _resultImagePath = imageUrl;
+          _isLoading = false;
+          notifyListeners();
+        }
+      } else if (result['status'] == 'error') {
+        debugPrint('Task error: ${result['error_message']}');
+        _errorMessage = result['error_message'] ?? 'An error occurred during image generation';
+        _isLoading = false;
+        notifyListeners();
+      } else {
+        debugPrint('Task still processing. Status: ${result['status']}');
+      }
+      // If still processing, continue polling
+    } catch (e) {
+      _errorMessage = "Error checking task status: $e";
+      _isLoading = false;
+      debugPrint(_errorMessage);
       notifyListeners();
     }
   }

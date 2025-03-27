@@ -5,13 +5,116 @@ import 'package:share_plus/share_plus.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'dart:typed_data' show Uint8List;
+import 'dart:async';
 import '../constants/app_constants.dart';
 import '../services/app_state.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 
-class ResultScreen extends StatelessWidget {
+class ResultScreen extends StatefulWidget {
   const ResultScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  Timer? _pollingTimer;
+  bool _isPolling = false;
+  String? _pollingStatus;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Start polling when screen initializes
+    _startPolling();
+  }
+  
+  @override
+  void dispose() {
+    // Cancel timer when screen is disposed
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+  
+  void _startPolling() {
+    // Only start if not already polling
+    if (_isPolling) return;
+    
+    setState(() {
+      _isPolling = true;
+      _pollingStatus = 'Starting...';
+    });
+    
+    // Poll every 3 seconds
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _pollForResults();
+    });
+    
+    // Immediately poll once
+    _pollForResults();
+  }
+  
+  Future<void> _pollForResults() async {
+    final appState = provider.Provider.of<AppState>(context, listen: false);
+    
+    // If we already have a result, stop polling
+    if (appState.resultImagePath != null) {
+      debugPrint('Already have a result, stopping polling');
+      _stopPolling();
+      return;
+    }
+    
+    setState(() {
+      _pollingStatus = 'Checking for results...';
+    });
+    
+    try {
+      // Call the polling method in AppState
+      debugPrint('Polling for task results...');
+      await appState.pollTaskResults();
+      
+      // If we now have a result, stop polling
+      if (appState.resultImagePath != null) {
+        debugPrint('Received result, stopping polling');
+        _stopPolling();
+        
+        // Verify the URL
+        _verifyImageUrl(appState.resultImagePath!);
+      } else if (appState.errorMessage != null) {
+        debugPrint('Received error: ${appState.errorMessage}');
+        _stopPolling();
+      }
+    } catch (e) {
+      debugPrint('Error during polling: $e');
+      setState(() {
+        _pollingStatus = 'Error: $e';
+      });
+    }
+  }
+  
+  void _verifyImageUrl(String url) {
+    debugPrint('Verifying image URL: $url');
+    http.get(Uri.parse(url)).then((response) {
+      if (response.statusCode == 200) {
+        debugPrint('Image URL verification successful: ${response.statusCode}');
+      } else {
+        debugPrint('Image URL verification failed: ${response.statusCode}');
+      }
+    }).catchError((error) {
+      debugPrint('Error verifying image URL: $error');
+    });
+  }
+  
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+    
+    setState(() {
+      _isPolling = false;
+      _pollingStatus = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,15 +166,17 @@ class ResultScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Step 3: See your result',
+                'Your Result',
                 style: AppConstants.headingStyle,
               ),
               const SizedBox(height: AppConstants.defaultPadding),
               
               Expanded(
-                child: appState.isLoading
+                child: appState.isLoading || (appState.resultImagePath == null && _isPolling)
                     ? _buildLoadingState()
-                    : _buildResultState(context, appState),
+                    : appState.resultImagePath != null
+                        ? _buildResultState(context, appState)
+                        : _buildErrorState(appState),
               ),
               
               const SizedBox(height: AppConstants.defaultPadding),
@@ -116,10 +221,51 @@ class ResultScreen extends StatelessWidget {
             valueColor: AlwaysStoppedAnimation<Color>(AppConstants.primaryColor),
           ),
           const SizedBox(height: AppConstants.defaultPadding),
-          const Text(
-            'Generating your hanbok image...',
+          Text(
+            _pollingStatus ?? 'Generating your hanbok image...',
             style: AppConstants.bodyStyle,
             textAlign: TextAlign.center,
+          ),
+          if (_isPolling)
+            Padding(
+              padding: const EdgeInsets.only(top: AppConstants.smallPadding),
+              child: Text(
+                'This may take a few moments...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildErrorState(AppState appState) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 48,
+            color: Colors.red[300],
+          ),
+          const SizedBox(height: AppConstants.smallPadding),
+          Text(
+            appState.errorMessage ?? 'An error occurred',
+            style: AppConstants.bodyStyle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppConstants.defaultPadding),
+          TextButton(
+            onPressed: () {
+              // Restart polling
+              _startPolling();
+            },
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -147,18 +293,84 @@ class ResultScreen extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: appState.resultImagePath!,
                 fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  color: Colors.grey[200],
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  color: Colors.grey[200],
-                  child: const Center(
-                    child: Icon(Icons.error),
-                  ),
-                ),
+                fadeInDuration: const Duration(milliseconds: 500),
+                memCacheHeight: 800,
+                maxHeightDiskCache: 1024,
+                maxWidthDiskCache: 768,
+                errorWidget: (context, url, error) {
+                  debugPrint('Error loading image from URL: $url - Error: $error');
+                  // Try an alternative approach with direct Image.network with different caching
+                  return FutureBuilder(
+                    future: _retryLoadImage(url),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.done && 
+                          snapshot.data == true) {
+                        return Image.network(
+                          // Add cache-busting parameter if not already present
+                          url.contains('?') ? '$url&t=${DateTime.now().millisecondsSinceEpoch}' 
+                            : '$url?t=${DateTime.now().millisecondsSinceEpoch}',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.error, color: Colors.red, size: 48),
+                                  const SizedBox(height: 16),
+                                  const Text('Failed to load image'),
+                                  const SizedBox(height: 8),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      // Force refresh the image
+                                      setState(() {});
+                                      // Try to poll results again
+                                      _pollForResults();
+                                    },
+                                    child: const Text('Retry'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      } else {
+                        return Container(
+                          color: Colors.grey[200],
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.error, color: Colors.red, size: 48),
+                                const SizedBox(height: 16),
+                                Text(snapshot.hasError ? 'Error: ${snapshot.error}' : 'Retrying...'),
+                                const SizedBox(height: 8),
+                                if (!snapshot.hasData && snapshot.connectionState != ConnectionState.waiting)
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      // Force refresh the image
+                                      setState(() {});
+                                      // Try to poll results again
+                                      _pollForResults();
+                                    },
+                                    child: const Text('Retry'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                },
+                placeholder: (context, url) {
+                  debugPrint('Loading image from URL: $url');
+                  return Container(
+                    color: Colors.grey[200],
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -247,5 +459,29 @@ class ResultScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Future<bool> _retryLoadImage(String url) async {
+    try {
+      // First check if the URL is accessible
+      final response = await http.head(Uri.parse(url));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('URL is accessible in retry: $url');
+        return true;
+      }
+      
+      // If original URL isn't accessible, try with added timestamp
+      final timestampUrl = url.contains('?') 
+          ? '$url&t=${DateTime.now().millisecondsSinceEpoch}' 
+          : '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+      
+      final retryResponse = await http.head(Uri.parse(timestampUrl));
+      debugPrint('Retry URL accessibility status: ${retryResponse.statusCode}');
+      
+      return retryResponse.statusCode >= 200 && retryResponse.statusCode < 300;
+    } catch (e) {
+      debugPrint('Error retrying image load: $e');
+      return false;
+    }
   }
 } 

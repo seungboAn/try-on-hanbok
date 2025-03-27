@@ -22,6 +22,11 @@ class HanbokService {
   final InferenceService _inferenceService = InferenceService();
   final SupabaseService _supabaseService = SupabaseService();
   
+  // Provide access to the inference service
+  InferenceService getInferenceService() {
+    return _inferenceService;
+  }
+  
   // Load hanbok images from Supabase via Edge Function
   Future<void> loadHanbokImages() async {
     try {
@@ -78,19 +83,11 @@ class HanbokService {
       debugPrint('- Preset image: $presetImagePath');
       
       // Call the inference service to generate the image
-      final resultUrl = await _inferenceService.generateHanbokFitting(
+      return await _inferenceService.generateHanbokFitting(
         sourcePath: sourceImagePath,
         targetPath: presetImagePath,
-        webhookUrl: null, // We're not using webhooks in this implementation
+        webhookUrl: null, // We're not using webhooks directly in this implementation
       );
-      
-      if (resultUrl != null) {
-        debugPrint('Generation successful: $resultUrl');
-        return resultUrl;
-      } else {
-        debugPrint('Failed to generate hanbok image');
-        throw Exception('Failed to generate hanbok image');
-      }
     } catch (e) {
       debugPrint('Error in generateHanbokImage: $e');
       rethrow; // 에러를 상위로 전파하여 UI에서 처리할 수 있도록 함
