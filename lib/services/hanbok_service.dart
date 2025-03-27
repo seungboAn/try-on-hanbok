@@ -1,5 +1,12 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:http/http.dart' as http;
+import 'dart:math' as math;
+import 'dart:async';
 import '../models/hanbok_image.dart';
+import 'inference_service.dart';
+import 'supabase_service.dart';
 
 class HanbokService {
   // Singleton pattern
@@ -7,78 +14,86 @@ class HanbokService {
   factory HanbokService() => _instance;
   HanbokService._internal();
   
-  // In-memory caches for hanbok images
-  final List<HanbokImage> _traditionalHanbokImages = [];
-  final List<HanbokImage> _modernHanbokImages = [];
+  // In-memory cache of hanbok images
+  List<HanbokImage> _traditionalHanboks = [];
+  List<HanbokImage> _modernHanboks = [];
   
-  // Getters
-  List<HanbokImage> get traditionalHanbokImages => _traditionalHanbokImages;
-  List<HanbokImage> get modernHanbokImages => _modernHanbokImages;
+  // Services
+  final InferenceService _inferenceService = InferenceService();
+  final SupabaseService _supabaseService = SupabaseService();
   
+  // Load hanbok images from Supabase via Edge Function
   Future<void> loadHanbokImages() async {
     try {
-      // For MVP purposes, generate some mock hanbok data directly
-      // In a real app, this would load from a remote API
+      // Use Edge Function to fetch preset images
+      debugPrint('Fetching hanbok presets from Edge Function...');
+      final List<HanbokImage> presets = await _supabaseService.getPresetImages();
       
-      // Generate 20 traditional hanbok images
-      for (int i = 1; i <= 20; i++) {
-        _traditionalHanbokImages.add(
-          HanbokImage(
-            id: 'traditional-$i',
-            imagePath: 'assets/images/traditional/hanbok_${i % 10 + 1}.png',
-            title: 'Traditional Hanbok ${i % 10 + 1}',
-            category: 'traditional',
-            description: 'A beautiful traditional hanbok design',
-          ),
-        );
+      if (presets.isEmpty) {
+        debugPrint('No presets found from Edge Function');
+        return;
       }
       
-      // Generate 10 modern hanbok images
-      for (int i = 1; i <= 10; i++) {
-        _modernHanbokImages.add(
-          HanbokImage(
-            id: 'modern-$i',
-            imagePath: 'assets/images/modern/hanbok_${i % 5 + 1}.png',
-            title: 'Modern Hanbok ${i % 5 + 1}',
-            category: 'modern',
-            description: 'A stylish modern hanbok design',
-          ),
-        );
-      }
-      
-      print('Loaded ${_traditionalHanbokImages.length} traditional and ${_modernHanbokImages.length} modern hanbok images');
+      _traditionalHanboks = presets
+          .where((preset) => preset.category == 'traditional')
+          .toList();
+          
+      _modernHanboks = presets
+          .where((preset) => preset.category == 'modern')
+          .toList();
+          
+      debugPrint('Loaded ${_traditionalHanboks.length} traditional and ${_modernHanboks.length} modern hanbok images from Supabase');
     } catch (e) {
-      print('Error loading hanbok images: $e');
-      // Return empty lists on error
-      _traditionalHanbokImages.clear();
-      _modernHanbokImages.clear();
+      debugPrint('Error loading hanbok images from Supabase: $e');
+      rethrow; // 에러를 상위로 전파하여 UI에서 처리할 수 있도록 함
     }
   }
   
+  // Get all hanbok images
+  List<HanbokImage> getHanbokImages() {
+    return [..._traditionalHanboks, ..._modernHanboks];
+  }
+  
+  // Get all hanbok images by category
   List<HanbokImage> getHanboksByCategory(String category) {
-    if (category == 'traditional') {
-      return _traditionalHanbokImages;
-    } else if (category == 'modern') {
-      return _modernHanbokImages;
-    } else {
-      // Default to returning all images
-      return [..._traditionalHanbokImages, ..._modernHanbokImages];
+    switch (category.toLowerCase()) {
+      case 'traditional':
+        return _traditionalHanboks;
+      case 'modern':
+        return _modernHanboks;
+      case 'fusion':
+        return _modernHanboks.where((hanbok) => 
+          hanbok.category.toLowerCase() == 'fusion'
+        ).toList();
+      default:
+        return getHanbokImages();
     }
   }
   
-  Future<HanbokImage?> generateMockImage(HanbokImage selectedHanbok, dynamic userImage) async {
-    // This would normally call an API with the user image and selected hanbok
-    // For the MVP, just simulate an API call delay and return the same hanbok
-    await Future.delayed(const Duration(seconds: 2));
-    
-    // In a real app, we would return a newly generated image
-    // For now, just return a mock result
-    return HanbokImage(
-      id: 'result-${selectedHanbok.id}',
-      imagePath: 'assets/images/mock_result.png',
-      title: 'Your Hanbok',
-      category: selectedHanbok.category,
-      description: 'Your personalized hanbok',
-    );
+  // Use actual API to generate hanbok image
+  Future<String?> generateHanbokImage(String sourceImagePath, String presetImagePath) async {
+    try {
+      debugPrint('Generating hanbok image:');
+      debugPrint('- Source image: $sourceImagePath');
+      debugPrint('- Preset image: $presetImagePath');
+      
+      // Call the inference service to generate the image
+      final resultUrl = await _inferenceService.generateHanbokFitting(
+        sourcePath: sourceImagePath,
+        targetPath: presetImagePath,
+        webhookUrl: null, // We're not using webhooks in this implementation
+      );
+      
+      if (resultUrl != null) {
+        debugPrint('Generation successful: $resultUrl');
+        return resultUrl;
+      } else {
+        debugPrint('Failed to generate hanbok image');
+        throw Exception('Failed to generate hanbok image');
+      }
+    } catch (e) {
+      debugPrint('Error in generateHanbokImage: $e');
+      rethrow; // 에러를 상위로 전파하여 UI에서 처리할 수 있도록 함
+    }
   }
-}
+} 

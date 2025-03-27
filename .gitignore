@@ -54,3 +54,9 @@ app.*.map.json
 **/ios/Flutter/flutter_assets/
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production

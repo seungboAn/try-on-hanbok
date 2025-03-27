@@ -1,174 +1,177 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../state/app_state.dart';
+import 'package:provider/provider.dart' as provider;
 import '../constants/app_constants.dart';
-import '../models/hanbok_image.dart';
-import '../services/hanbok_service.dart';
-import '../widgets/category_filter.dart';
+import '../services/app_state.dart';
 import '../widgets/hanbok_grid.dart';
 
-class HanbokSelectionScreen extends StatefulWidget {
+class HanbokSelectionScreen extends StatelessWidget {
   const HanbokSelectionScreen({Key? key}) : super(key: key);
 
   @override
-  State<HanbokSelectionScreen> createState() => _HanbokSelectionScreenState();
-}
-
-class _HanbokSelectionScreenState extends State<HanbokSelectionScreen> {
-  final HanbokService _hanbokService = HanbokService();
-  List<HanbokImage> _displayedImages = [];
-  bool _hasMore = false;
-  bool _loadingMore = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadInitialImages();
-  }
-
-  void _loadInitialImages() {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final category = appState.selectedCategory;
-    final page = appState.currentPage;
-    final pageSize = appState.pageSize;
-    
-    final allImages = category == 'traditional' 
-        ? _hanbokService.traditionalHanbokImages 
-        : _hanbokService.modernHanbokImages;
-    
-    // Calculate current page's images
-    final startIndex = 0;
-    final endIndex = page * pageSize;
-    
-    setState(() {
-      _displayedImages = allImages.sublist(
-        startIndex, 
-        endIndex > allImages.length ? allImages.length : endIndex
-      );
-      _hasMore = allImages.length > endIndex;
-    });
-  }
-
-  void _loadMoreImages() {
-    setState(() {
-      _loadingMore = true;
-    });
-    
-    final appState = Provider.of<AppState>(context, listen: false);
-    appState.nextPage();
-    
-    // Simulate network delay
-    Future.delayed(const Duration(milliseconds: 800), () {
-      final category = appState.selectedCategory;
-      final page = appState.currentPage;
-      final pageSize = appState.pageSize;
-      
-      final allImages = category == 'traditional' 
-          ? _hanbokService.traditionalHanbokImages 
-          : _hanbokService.modernHanbokImages;
-      
-      final endIndex = page * pageSize;
-      
-      setState(() {
-        _displayedImages = allImages.sublist(
-          0, 
-          endIndex > allImages.length ? allImages.length : endIndex
-        );
-        _hasMore = allImages.length > endIndex;
-        _loadingMore = false;
-      });
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-    
+    final appState = provider.Provider.of<AppState>(context);
+    final hanbokImages = appState.getHanboksByCategory(appState.selectedCategory);
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Select Your Hanbok'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppConstants.defaultPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Choose your favorite hanbok style',
-                    style: AppConstants.bodyStyle,
-                  ),
-                  const SizedBox(height: AppConstants.defaultPadding),
-                  
-                  // Category filter buttons
-                  CategoryFilter(
-                    selectedCategory: appState.selectedCategory,
-                    onCategorySelected: (category) {
-                      appState.selectCategory(category);
-                      _loadInitialImages();
-                    },
-                  ),
-                ],
+            CircleAvatar(
+              backgroundColor: AppConstants.primaryColor.withOpacity(0.2),
+              radius: 18,
+              child: Icon(
+                Icons.accessibility_new,
+                color: AppConstants.primaryColor,
+                size: 20,
               ),
             ),
-            
-            // Hanbok grid with scrolling
-            Expanded(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppConstants.defaultPadding),
-                  child: Column(
-                    children: [
-                      // Grid of hanbok images
-                      HanbokGrid(
-                        hanbokImages: _displayedImages,
-                        selectedHanbok: appState.selectedHanbok,
-                        onHanbokSelected: (hanbok) {
-                          appState.selectHanbok(hanbok);
-                        },
-                        crossAxisCount: 2, // 2 items per row for mobile
-                      ),
-                      
-                      // Load more button
-                      if (_hasMore)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: AppConstants.defaultPadding),
-                          child: _loadingMore
-                              ? const CircularProgressIndicator()
-                              : TextButton.icon(
-                                  onPressed: _loadMoreImages,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Load More'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: AppConstants.primaryColor,
-                                  ),
-                                ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // Bottom action button
-            Padding(
-              padding: const EdgeInsets.all(AppConstants.defaultPadding),
-              child: ElevatedButton(
-                onPressed: appState.selectedHanbok != null
-                    ? () => Navigator.pushNamed(context, '/photo-upload')
-                    : null,
-                child: const Text('Continue to Upload Photo'),
+            const SizedBox(width: 8),
+            const Text(
+              'Try On\nHanbok',
+              style: TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                height: 1.2,
               ),
             ),
           ],
         ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            child: CircleAvatar(
+              backgroundColor: Colors.grey[200],
+              radius: 16,
+              child: const Text('EN', style: TextStyle(fontSize: 12, color: Colors.black87)),
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.defaultPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Step 2: Choose your hanbok',
+                style: AppConstants.headingStyle,
+              ),
+              const SizedBox(height: AppConstants.defaultPadding),
+              
+              // Category selection
+              Row(
+                children: [
+                  _buildCategoryButton(
+                    context: context,
+                    category: 'traditional',
+                    label: 'Traditional',
+                    isSelected: appState.selectedCategory == 'traditional',
+                  ),
+                  const SizedBox(width: AppConstants.defaultPadding),
+                  _buildCategoryButton(
+                    context: context,
+                    category: 'modern',
+                    label: 'Modern',
+                    isSelected: appState.selectedCategory == 'modern',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppConstants.defaultPadding),
+              
+              // Hanbok grid
+              Expanded(
+                child: appState.isLoading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(AppConstants.primaryColor),
+                        ),
+                      )
+                    : hanbokImages.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No hanbok images available for this category',
+                              style: AppConstants.bodyStyle,
+                              textAlign: TextAlign.center,
+                            ),
+                          )
+                        : HanbokGrid(
+                            hanbokImages: hanbokImages,
+                            onHanbokSelected: (hanbok) {
+                              appState.selectHanbok(hanbok);
+                              Navigator.pushNamed(context, '/result');
+                            },
+                          ),
+              ),
+              
+              const SizedBox(height: AppConstants.defaultPadding),
+              
+              // Back button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppConstants.primaryColor,
+                    elevation: 0,
+                    side: BorderSide(color: AppConstants.primaryColor),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                    ),
+                  ),
+                  child: const Text(
+                    'Back',
+                    style: TextStyle(
+                      fontSize: 16.0,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
-}
+
+  Widget _buildCategoryButton({
+    required BuildContext context,
+    required String category,
+    required String label,
+    required bool isSelected,
+  }) {
+    return Expanded(
+      child: ElevatedButton(
+        onPressed: () {
+          provider.Provider.of<AppState>(context, listen: false).setCategory(category);
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isSelected ? AppConstants.primaryColor : Colors.white,
+          foregroundColor: isSelected ? Colors.white : AppConstants.primaryColor,
+          elevation: 0,
+          side: BorderSide(
+            color: isSelected ? Colors.transparent : AppConstants.primaryColor,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16.0,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+} 

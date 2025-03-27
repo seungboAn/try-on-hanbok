@@ -13,41 +13,44 @@ class CategoryFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildCategoryButton('traditional', 'Traditional'),
-          _buildCategoryButton('modern', 'Modern'),
-        ],
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        _buildCategoryButton('all', 'All'),
+        const SizedBox(width: AppConstants.smallPadding),
+        _buildCategoryButton('traditional', 'Traditional'),
+        const SizedBox(width: AppConstants.smallPadding),
+        _buildCategoryButton('modern', 'Modern'),
+      ],
     );
   }
 
   Widget _buildCategoryButton(String category, String label) {
     final isSelected = selectedCategory == category;
     
-    return GestureDetector(
-      onTap: () => onCategorySelected(category),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? AppConstants.primaryColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+    return ElevatedButton(
+      onPressed: () => onCategorySelected(category),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isSelected
+            ? AppConstants.primaryColor
+            : AppConstants.secondaryColor,
+        foregroundColor: isSelected ? Colors.white : AppConstants.textColor,
+        elevation: isSelected ? 2 : 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.smallBorderRadius),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : AppConstants.textColor,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.defaultPadding,
+          vertical: AppConstants.smallPadding,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? Colors.white : AppConstants.textColor,
         ),
       ),
     );
   }
-}
+} 
