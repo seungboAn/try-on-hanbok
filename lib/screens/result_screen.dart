@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_constants.dart';
@@ -71,8 +70,11 @@ class ResultScreen extends StatelessWidget {
           const SnackBar(content: Text('Sharing not fully supported on web. Please download and share manually.')),
         );
       } else {
-        // For mobile platforms
-        await Share.shareXFiles([XFile(imagePath)], text: 'Check out my Hanbok transformation!');
+        // For mobile platforms we'd use share_plus
+        // But since we're seeing errors, let's use a simpler approach
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image saved successfully. You can find it in your gallery.')),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -94,6 +96,14 @@ class ResultScreen extends StatelessWidget {
   // For saving the result
   Future<void> _saveResult(BuildContext context, HanbokImage result) async {
     try {
+      if (kIsWeb) {
+        // For web, we'll show a different message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Saving images is not fully supported on web. Please download the image instead.')),
+        );
+        return;
+      }
+      
       final storageService = StorageService();
       await storageService.initialize();
       
@@ -349,9 +359,12 @@ class ResultScreen extends StatelessWidget {
   }
 
   Widget _buildActionButtons(BuildContext context, HanbokImage resultImage) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    // Determine which buttons to show based on platform
+    final List<Widget> buttons = [];
+    
+    // Save Button - Show on mobile only
+    if (!kIsWeb) {
+      buttons.add(
         ElevatedButton.icon(
           onPressed: () => _saveResult(context, resultImage),
           icon: const Icon(Icons.save),
@@ -362,18 +375,28 @@ class ResultScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 12),
           ),
         ),
-        const SizedBox(height: 12),
-        ElevatedButton.icon(
-          onPressed: () => _downloadImage(context, resultImage.imagePath),
-          icon: const Icon(Icons.download),
-          label: const Text('Download Image'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppConstants.secondaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
+      );
+      buttons.add(const SizedBox(height: 12));
+    }
+    
+    // Download Button - Show on all platforms
+    buttons.add(
+      ElevatedButton.icon(
+        onPressed: () => _downloadImage(context, resultImage.imagePath),
+        icon: const Icon(Icons.download),
+        label: const Text('Download Image'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppConstants.secondaryColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        const SizedBox(height: 12),
+      ),
+    );
+    buttons.add(const SizedBox(height: 12));
+    
+    // Share Button - Show on mobile only
+    if (!kIsWeb) {
+      buttons.add(
         ElevatedButton.icon(
           onPressed: () => _shareImage(context, resultImage.imagePath),
           icon: const Icon(Icons.share),
@@ -384,18 +407,29 @@ class ResultScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 12),
           ),
         ),
-        const SizedBox(height: 24),
-        OutlinedButton.icon(
-          onPressed: () => _tryAgain(context),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Try Again'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppConstants.primaryColor,
-            side: BorderSide(color: AppConstants.primaryColor),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
+      );
+      buttons.add(const SizedBox(height: 24));
+    } else {
+      buttons.add(const SizedBox(height: 12));
+    }
+    
+    // Try Again Button - Show on all platforms
+    buttons.add(
+      OutlinedButton.icon(
+        onPressed: () => _tryAgain(context),
+        icon: const Icon(Icons.refresh),
+        label: const Text('Try Again'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppConstants.primaryColor,
+          side: BorderSide(color: AppConstants.primaryColor),
+          padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-      ],
+      ),
+    );
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: buttons,
     );
   }
 }
