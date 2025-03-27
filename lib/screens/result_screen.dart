@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,9 @@ import '../state/app_state.dart';
 import '../services/storage_service.dart';
 import 'index_screen.dart';
 
+// Conditionally import web-specific code
+import '../services/web_helper.dart' if (dart.library.io) '../services/mobile_helper.dart' as platform;
+
 class ResultScreen extends StatelessWidget {
   static const String routeName = '/result';
 
@@ -19,17 +23,26 @@ class ResultScreen extends StatelessWidget {
   Future<void> _downloadImage(BuildContext context, String imagePath) async {
     try {
       if (kIsWeb) {
-        // For web, we'll use a different approach since direct file downloads work differently
-        // We can launch a URL that points to the image
-        final uri = Uri.parse(imagePath.startsWith('http') 
-            ? imagePath 
-            : 'assets/images/mock_result.png');
-        
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri);
+        // Web handling using our Web Helper
+        if (imagePath.startsWith('assets/')) {
+          // For asset images, we need to load them first
+          final ByteData data = await rootBundle.load(imagePath);
+          final Uint8List bytes = data.buffer.asUint8List();
+          platform.WebHelper.downloadFileFromBytes(
+            bytes, 
+            'hanbok_result.png',
+            mimeType: 'image/png'
+          );
+        } else if (imagePath.startsWith('http')) {
+          // For network images
+          platform.WebHelper.downloadFileFromUrl(
+            imagePath, 
+            'hanbok_result.png'
+          );
         } else {
+          // For local file urls or other cases
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Unable to open image for download')),
+            const SnackBar(content: Text('Click on the image and save it manually')),
           );
         }
       } else {
@@ -39,7 +52,7 @@ class ResultScreen extends StatelessWidget {
         
         if (savedPath != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Image saved to: $savedPath')),
+            SnackBar(content: Text('Image saved to gallery')),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -54,7 +67,7 @@ class ResultScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _shareImage(BuildContext context, String imagePath) async {
+  Future<void> _shareImage(BuildContext context, String imagePath, String title) async {
     try {
       if (imagePath.startsWith('assets/')) {
         // For asset images, we need a different approach
@@ -65,15 +78,22 @@ class ResultScreen extends StatelessWidget {
       }
       
       if (kIsWeb) {
-        // Web sharing is limited compared to mobile
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sharing not fully supported on web. Please download and share manually.')),
+        // Web sharing using WebHelper
+        final success = await platform.WebHelper.shareContent(
+          title: 'My Hanbok Transformation',
+          text: 'Check out my Hanbok transformation!',
+          url: imagePath.startsWith('http') ? imagePath : null,
         );
+        
+        if (!success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sharing not supported in this browser. Please download and share manually.')),
+          );
+        }
       } else {
-        // For mobile platforms we'd use share_plus
-        // But since we're seeing errors, let's use a simpler approach
+        // For mobile platforms, show a success message instead of trying to use Share
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image saved successfully. You can find it in your gallery.')),
+          const SnackBar(content: Text('Image ready to share. You can find it in your gallery.')),
         );
       }
     } catch (e) {
@@ -310,50 +330,53 @@ class ResultScreen extends StatelessWidget {
   }
 
   Widget _buildResultImage(BuildContext context, String imagePath) {
-    return Container(
-      height: 400,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: imagePath.startsWith('assets/')
-            ? Image.asset(
-                imagePath,
-                fit: BoxFit.contain,
-              )
-            : imagePath.startsWith('http')
-                ? Image.network(
-                    imagePath,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
+    return GestureDetector(
+      onTap: kIsWeb ? () => _downloadImage(context, imagePath) : null,
+      child: Container(
+        height: 400,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: imagePath.startsWith('assets/')
+              ? Image.asset(
+                  imagePath,
+                  fit: BoxFit.contain,
+                )
+              : imagePath.startsWith('http')
+                  ? Image.network(
+                      imagePath,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        );
+                      },
+                    )
+                  : kIsWeb
+                      ? Image.network(
+                          imagePath,
+                          fit: BoxFit.contain,
+                        )
+                      : Image.file(
+                          File(imagePath),
+                          fit: BoxFit.contain,
                         ),
-                      );
-                    },
-                  )
-                : kIsWeb
-                    ? Image.network(
-                        imagePath,
-                        fit: BoxFit.contain,
-                      )
-                    : Image.file(
-                        File(imagePath),
-                        fit: BoxFit.contain,
-                      ),
+        ),
       ),
     );
   }
@@ -394,24 +417,20 @@ class ResultScreen extends StatelessWidget {
     );
     buttons.add(const SizedBox(height: 12));
     
-    // Share Button - Show on mobile only
-    if (!kIsWeb) {
-      buttons.add(
-        ElevatedButton.icon(
-          onPressed: () => _shareImage(context, resultImage.imagePath),
-          icon: const Icon(Icons.share),
-          label: const Text('Share'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppConstants.accentColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
+    // Share Button
+    buttons.add(
+      ElevatedButton.icon(
+        onPressed: () => _shareImage(context, resultImage.imagePath, resultImage.title),
+        icon: const Icon(Icons.share),
+        label: const Text('Share'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppConstants.accentColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-      );
-      buttons.add(const SizedBox(height: 24));
-    } else {
-      buttons.add(const SizedBox(height: 12));
-    }
+      ),
+    );
+    buttons.add(const SizedBox(height: 24));
     
     // Try Again Button - Show on all platforms
     buttons.add(
@@ -426,6 +445,22 @@ class ResultScreen extends StatelessWidget {
         ),
       ),
     );
+    
+    // Add hint text for web users
+    if (kIsWeb) {
+      buttons.add(const SizedBox(height: 16));
+      buttons.add(
+        Text(
+          'Tip: You can also click directly on the image to download it',
+          style: TextStyle(
+            fontSize: 12,
+            color: AppConstants.textColor.withOpacity(0.7),
+            fontStyle: FontStyle.italic,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
