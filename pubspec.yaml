@@ -53,10 +53,16 @@ dependencies:
   shared_preferences: ^2.2.2
   share_plus: ^7.2.1
   
+  # File download and URL handling  
+  file_saver: ^0.2.9
+  url_launcher: ^6.2.1
+  
   # Utilities
   intl: ^0.18.1
   uuid: ^4.1.0
-  url_launcher: ^6.2.1
+  
+  # Cross-platform utilities
+  cross_file: ^0.3.3+6
 
 dev_dependencies:
   flutter_test:
