@@ -1,0 +1,31 @@
+name: hanbok_virtual_fitting
+description: A virtual fitting room for Hanbok, the traditional Korean dress.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=2.12.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  provider: ^6.0.0
+  image_picker: ^1.0.4
+  path_provider: ^2.0.5
+  cached_network_image: ^3.3.0
+  http: ^1.1.0
+  share_plus: ^7.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/images/traditional/
+    - assets/images/modern/
