@@ -1,0 +1,28 @@
+# Dart/Flutter specific
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+pubspec.lock
+
+# Environment files
+.env
+*.env
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Generated files
+*.g.dart
+*.freezed.dart
+
+# Miscellaneous
+*.log
+*.pyc
+*.swp
+.DS_Store 
