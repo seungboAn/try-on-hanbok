@@ -643,8 +643,6 @@ class _GenerateSectionState extends State<GenerateSection> {
                           fit: BoxFit.contain,
                           height: totalPresetHeight,
                           alignment: Alignment.center,
-                          filterQuality: FilterQuality.high,
-                          gaplessPlayback: true,
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return Center(
@@ -776,8 +774,6 @@ class _GenerateSectionState extends State<GenerateSection> {
                         fit: BoxFit.contain,
                         height: containerHeight,
                         alignment: Alignment.center,
-                        filterQuality: FilterQuality.high,
-                        gaplessPlayback: true,
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
                           return Center(
@@ -962,8 +958,6 @@ class _GenerateSectionState extends State<GenerateSection> {
                   imagePath,
                   fit: BoxFit.cover,
                   alignment: Alignment.topCenter,
-                  filterQuality: FilterQuality.high,
-                  gaplessPlayback: true,
                       loadingBuilder: (context, child, loadingProgress) {
                         if (loadingProgress == null) return child;
                         return Center(

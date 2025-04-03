@@ -75,8 +75,6 @@ class _GenerateSectionState extends State<GenerateSection> {
                           child: Image.network(
                             uploadedImageUrl,
                             fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                            gaplessPlayback: true,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
                               return Center(
@@ -155,8 +153,6 @@ class _GenerateSectionState extends State<GenerateSection> {
                           child: Image.network(
                             widget.selectedHanbok!,
                             fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                            gaplessPlayback: true,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
                               return Center(

@@ -139,8 +139,6 @@ class _SelectSectionState extends State<SelectSection> {
           child: Image.network(
             preset.imagePath,
             fit: BoxFit.cover,
-            filterQuality: FilterQuality.high,
-            gaplessPlayback: true,
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
               return Center(

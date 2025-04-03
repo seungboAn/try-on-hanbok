@@ -236,8 +236,6 @@ class _ResultSectionState extends State<ResultSection> {
         fit: BoxFit.fitHeight,
         width: double.infinity,
         height: double.infinity,
-        filterQuality: FilterQuality.high,
-        gaplessPlayback: true,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(

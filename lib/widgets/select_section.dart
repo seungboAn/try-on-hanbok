@@ -389,8 +389,6 @@ class _SelectSectionState extends State<SelectSection> {
                               alignment: Alignment.topCenter,
                               // 이미지 캐싱 활성화하여 성능 향상
                               cacheWidth: (MediaQuery.of(context).size.width / crossAxisCount).ceil(),
-                              filterQuality: FilterQuality.high,
-                              gaplessPlayback: true,
                               loadingBuilder: (context, child, loadingProgress) {
                                 if (loadingProgress == null) return child;
                                 return Center(
