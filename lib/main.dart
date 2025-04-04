@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:responsive_framework/responsive_framework.dart';
-import 'package:test02/pages/home_page.dart';
-import 'package:test02/pages/generate_page.dart';
-import 'package:test02/pages/result_page.dart';
+import 'package:try_on_hanbok/pages/home_page.dart';
+import 'package:try_on_hanbok/pages/generate_page.dart';
+import 'package:try_on_hanbok/pages/result_page.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-import 'package:test02/constants/exports.dart';
+import 'package:try_on_hanbok/constants/exports.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_services/hanbok_state.dart';
 import 'package:supabase_services/supabase_services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize Supabase services
   await SupabaseServices.initialize();
-  
+
+  // HankbokState 인스턴스 미리 생성하고 초기화 시작
+  final hanbokState = HanbokState();
+  hanbokState.initialize(); // 백그라운드에서 초기화 시작
+
   configureApp();
-  runApp(const MyApp());
+  runApp(MyApp(hanbokState: hanbokState));
 }
 
 void configureApp() {
@@ -24,18 +27,19 @@ void configureApp() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final HanbokState hanbokState;
+
+  const MyApp({super.key, required this.hanbokState});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => HanbokState()..initialize(),
+    return ChangeNotifierProvider.value(
+      value: hanbokState, // 이미 초기화를 시작한 인스턴스 사용
       child: MaterialApp(
         title: AppConstants.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme.copyWith(
           textTheme: AppTextStyles.getTextTheme(),
-          useMaterial3: true,
         ),
         builder: AppResponsive.responsiveBuilder,
         initialRoute: AppConstants.homeRoute,
@@ -46,7 +50,8 @@ class MyApp extends StatelessWidget {
             final selectedHanbok = settings.arguments as String?;
 
             return MaterialPageRoute(
-              builder: (context) => GeneratePage(selectedHanbok: selectedHanbok),
+              builder:
+                  (context) => GeneratePage(selectedHanbok: selectedHanbok),
             );
           }
 

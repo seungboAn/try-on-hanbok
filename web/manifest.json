@@ -1,11 +1,11 @@
 {
-    "name": "test02",
-    "short_name": "test02",
+    "name": "Try On Hanbok",
+    "short_name": "Try On Hanbok",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Try on traditional Korean clothing virtually using AI technology.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

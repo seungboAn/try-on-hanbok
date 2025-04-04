@@ -12,40 +12,41 @@ class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
   factory SupabaseService() => _instance;
   SupabaseService._internal();
-  
+
   // Get Supabase client (for public operations only)
   SupabaseClient get supabaseClient => Supabase.instance.client;
-  
+
   // Current user session
   Session? get currentSession => supabaseClient.auth.currentSession;
-  
+
   // Current user JWT token
   String? get currentUserToken => currentSession?.accessToken;
-  
+
   // Headers for API requests
   Map<String, String> _getHeaders(String? token) {
     final headers = {
       'Content-Type': 'application/json',
       'apikey': SupabaseConfig.supabaseAnonKey,
     };
-    
+
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
-    
+
     return headers;
   }
-  
+
   // Upload user image via Edge Function
-  Future<Map<String, dynamic>> uploadUserImage(Uint8List imageBytes, String contentType, String? token) async {
+  Future<Map<String, dynamic>> uploadUserImage(
+      Uint8List imageBytes, String contentType, String? token) async {
     if (token == null) {
       throw Exception('Authentication token required for image upload');
     }
-    
+
     try {
       // Convert image to base64
       final base64Image = base64Encode(imageBytes);
-      
+
       final response = await http.post(
         Uri.parse(SupabaseConfig.uploadUserImageEndpoint),
         headers: _getHeaders(token),
@@ -56,7 +57,7 @@ class SupabaseService {
           },
         }),
       );
-      
+
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
@@ -68,33 +69,38 @@ class SupabaseService {
       throw Exception('Failed to upload user image: $e');
     }
   }
-  
+
   // Get preset images via Edge Function
   Future<List<HanbokImage>> getPresetImages({String category = 'all'}) async {
     try {
       debugPrint('Fetching presets from Edge Function...');
-      
+
       final response = await http.get(
-        Uri.parse('${SupabaseConfig.getPresetImagesEndpoint}?category=$category'),
+        Uri.parse(
+            '${SupabaseConfig.getPresetImagesEndpoint}?category=$category'),
         headers: {
           'Authorization': 'Bearer ${SupabaseConfig.supabaseAnonKey}',
           'Content-Type': 'application/json',
         },
       );
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        
+
         if (data['success'] == true && data['presets'] != null) {
           final List<dynamic> presets = data['presets'];
-          return presets.map((preset) => HanbokImage(
-            id: preset['id'] ?? const Uuid().v4(),
-            category: preset['category'] ?? 'unknown',
-            imagePath: preset['image_url'] ?? '',
-            name: preset['name'] ?? 'Preset ${presets.indexOf(preset) + 1}',
-            description: preset['description'],
-            originalFilename: preset['original_filename'] ?? preset['name'],
-          )).toList();
+          return presets
+              .map((preset) => HanbokImage(
+                    id: preset['id'] ?? const Uuid().v4(),
+                    category: preset['category'] ?? 'unknown',
+                    imagePath: preset['image_url'] ?? '',
+                    name: preset['name'] ??
+                        'Preset ${presets.indexOf(preset) + 1}',
+                    description: preset['description'],
+                    originalFilename:
+                        preset['original_filename'] ?? preset['name'],
+                  ))
+              .toList();
         } else {
           debugPrint('Empty presets or success not true: ${response.body}');
           return [];
@@ -108,33 +114,36 @@ class SupabaseService {
       throw Exception('Failed to get preset images: $e');
     }
   }
-  
+
   // Sign in anonymously
   Future<String?> signInAnonymously() async {
     try {
       // Try to use signUp with a random email (modern approach)
       try {
         final res = await supabaseClient.auth.signUp(
-          email: 'anonymous_${DateTime.now().millisecondsSinceEpoch}@example.com',
+          email:
+              'anonymous_${DateTime.now().millisecondsSinceEpoch}@example.com',
           password: 'anonymous${DateTime.now().millisecondsSinceEpoch}',
         );
         return res.session?.accessToken;
       } catch (e) {
         debugPrint('Failed to use signUp method, trying alternative: $e');
-        
+
         // Alternative method as a fallback
         final response = await http.post(
-          Uri.parse('${SupabaseConfig.supabaseUrl}/auth/v1/token?grant_type=password'),
+          Uri.parse(
+              '${SupabaseConfig.supabaseUrl}/auth/v1/token?grant_type=password'),
           headers: {
             'Content-Type': 'application/json',
             'apikey': SupabaseConfig.supabaseAnonKey,
           },
           body: jsonEncode({
-            'email': 'anonymous_${DateTime.now().millisecondsSinceEpoch}@example.com',
+            'email':
+                'anonymous_${DateTime.now().millisecondsSinceEpoch}@example.com',
             'password': 'anonymous${DateTime.now().millisecondsSinceEpoch}',
           }),
         );
-        
+
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           return data['access_token'];
@@ -146,7 +155,7 @@ class SupabaseService {
       return null;
     }
   }
-  
+
   // Sign out current user
   Future<void> signOut() async {
     try {
@@ -156,9 +165,10 @@ class SupabaseService {
       throw Exception('Failed to sign out: $e');
     }
   }
-  
+
   // Upload file to Supabase storage
-  Future<String> uploadFile(Uint8List fileBytes, String path, String? contentType) async {
+  Future<String> uploadFile(
+      Uint8List fileBytes, String path, String? contentType) async {
     try {
       final response = await supabaseClient.storage
           .from(SupabaseConfig.userImagesBucket)
@@ -170,30 +180,50 @@ class SupabaseService {
               upsert: true,
             ),
           );
-      
+
       // Get public URL
       final publicUrl = supabaseClient.storage
           .from(SupabaseConfig.userImagesBucket)
           .getPublicUrl(path);
-          
+
       return publicUrl;
     } catch (e) {
       debugPrint('Error uploading file: $e');
       throw Exception('Failed to upload file: $e');
     }
   }
-  
+
   // Get presigned URL for a file
-  Future<String> getPresignedUrl(String bucket, String path, {int expiresIn = 3600}) async {
+  Future<String> getPresignedUrl(String bucket, String path,
+      {int expiresIn = 3600}) async {
     try {
       final response = await supabaseClient.storage
           .from(bucket)
           .createSignedUrl(path, expiresIn);
-          
       return response;
     } catch (e) {
       debugPrint('Error getting presigned URL: $e');
       throw Exception('Failed to get presigned URL: $e');
     }
   }
-} 
+
+  // 서버에서 결과 URL이 제공되지 않을 때 사용할 대체 이미지 URL 반환
+  Future<String?> getDefaultResultImage() async {
+    try {
+      // 미리 저장된 기본 샘플 결과 이미지 반환
+      // 또는 최근에 선택된 한복 프리셋 이미지 반환
+      final modernPresets = await getPresetImages(category: 'modern');
+      if (modernPresets.isNotEmpty) {
+        // 첫 번째 모던 프리셋 이미지 반환 (임시 대체용)
+        debugPrint('Using fallback image from presets');
+        return modernPresets.first.imagePath;
+      }
+
+      // 프리셋이 없는 경우 null 반환
+      return null;
+    } catch (e) {
+      debugPrint('Error getting default result image: $e');
+      return null;
+    }
+  }
+}

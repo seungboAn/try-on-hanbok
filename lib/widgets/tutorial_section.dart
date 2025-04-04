@@ -3,9 +3,11 @@ import '../constants/app_colors.dart';
 import '../constants/app_constants.dart';
 import '../constants/app_sizes.dart';
 import '../constants/app_text_styles.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_services/hanbok_state.dart';
 
 class TutorialSection extends StatelessWidget {
-  const TutorialSection({Key? key}) : super(key: key);
+  const TutorialSection({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -320,10 +322,7 @@ class TutorialSection extends StatelessWidget {
               ),
               border: Border.all(
                 color: isHovered ? AppColors.primary : AppColors.border,
-                width:
-                    isHovered
-                        ? AppConstants.borderWidthThick
-                        : AppConstants.borderWidthThin,
+                width: AppConstants.borderWidthNormal,
               ),
               boxShadow:
                   isHovered
@@ -343,12 +342,54 @@ class TutorialSection extends StatelessWidget {
                   AppConstants.defaultButtonBorderRadius,
                 ),
                 onTap: () {
-                  // Navigate to generate page with first preset hanbok image
-                  Navigator.pushNamed(
+                  // HanbokState에서 DB 이미지 불러오기
+                  final hanbokState = Provider.of<HanbokState>(
                     context,
-                    AppConstants.generateRoute,
-                    arguments: AppConstants.modernHanbokList[0],
+                    listen: false,
                   );
+
+                  // DB에서 불러온 modern 프리셋 첫번째 이미지 경로 가져오기
+                  final String? bestImage =
+                      hanbokState.modernPresets.isNotEmpty
+                          ? hanbokState.modernPresets.first.imagePath
+                          : null;
+
+                  // 디버그 로그 추가
+                  debugPrint('튜토리얼 섹션에서 TryOnStart 버튼 클릭됨');
+                  debugPrint('DB에서 선택된 이미지: $bestImage');
+
+                  if (bestImage != null) {
+                    // 중앙 컨테이너에 이미지를 표시하기 위해 arguments로 전달
+                    Navigator.pushNamed(
+                      context,
+                      AppConstants.generateRoute,
+                      arguments: bestImage,
+                    );
+                  } else {
+                    // DB가 로드되지 않은 경우 초기화 후 다시 시도
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Loading presets, please try again in a moment...',
+                        ),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+
+                    // 초기화 시도
+                    hanbokState.initialize().then((_) {
+                      // 성공적으로 로드되면 다시 시도
+                      if (hanbokState.modernPresets.isNotEmpty) {
+                        final newBestImage =
+                            hanbokState.modernPresets.first.imagePath;
+                        Navigator.pushNamed(
+                          context,
+                          AppConstants.generateRoute,
+                          arguments: newBestImage,
+                        );
+                      }
+                    });
+                  }
                 },
                 child: Center(
                   child: Text(
@@ -362,6 +403,8 @@ class TutorialSection extends StatelessWidget {
                           isHovered ? FontWeight.bold : FontWeight.normal,
                       // 모바일/태블릿에서 버튼 텍스트 크기 조정
                       fontSize: isMobile ? 14 : (isTablet ? 16 : null),
+                      // Times 노말 폰트 적용
+                      fontFamily: 'Times',
                     ),
                   ),
                 ),

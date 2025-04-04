@@ -4,12 +4,18 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._(); // 인스턴스화 방지를 위한 private 생성자
 
+  //Color(0xFF9B64F6); // 주 색상 (퍼플)
+  //Color(0xFF56CDC0); // 보조 색상 (청록)
+  //Color(0xFFB68DF8); // 주 색상 밝은 버전
+  //Color(0xFFFFC300); // 강조 색상 (노랑)
+  //Color(0xFFE53935); // 오류 색상 (빨강)
+
   // 기본 색상
-  static const Color primary = Color(0xFF9B64F6); // 주 색상 (퍼플)
-  static const Color primaryLight = Color(0xFFB68DF8); // 주 색상 밝은 버전
-  static const Color secondary = Color(0xFF56CDC0); // 보조 색상 (청록)
-  static const Color accent = Color(0xFFFFC300); // 강조 색상 (노랑)
-  static const Color error = Color(0xFFE53935);
+  static const Color primary = Color(0xFF56CDC0); // 보조 색상 (청록)
+  static const Color primaryLight = Color(0xFFA8E6CF); // 주 색상 밝은 버전
+  static const Color secondary = Color(0xFF87A96B); // 세이지 그린
+  static const Color accent = Color(0xFFFFD3AC); // 강조 색상 (연 복숭아색)
+  static const Color error = Color(0xFFE53935); // 오류 색상 (빨강)
 
   // 배경 색상
   static const Color background = Colors.white;
@@ -41,7 +47,7 @@ class AppColors {
 
   // 이미지 테두리 색상
   static const Color imageStroke = primary;
-  static const Color imageStrokeHover = Color(0xFF6E6E6E);
+  static const Color imageStrokeHover = primaryLight;
 
   // 필터 버튼 색상
   static const Color filterButtonActive = primary;

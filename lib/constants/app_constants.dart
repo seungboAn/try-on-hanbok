@@ -4,7 +4,7 @@ class AppConstants {
 
   // 앱 정보
   static const String appName = 'Try On Hanbok';
-  static const String appDescription = '가상 한복 피팅 서비스';
+  static const String appDescription = 'Try On Hanbok Service';
   static const String appVersion = '1.0.0';
 
   // 이미지 경로
@@ -54,6 +54,7 @@ class AppConstants {
   static const String homeRoute = '/';
   static const String generateRoute = '/generate';
   static const String resultRoute = '/result';
+  static const String resultImagesRoute = '/result-images';
 
   // UI 요소 상수
   static const double defaultBorderRadius = 12.0;

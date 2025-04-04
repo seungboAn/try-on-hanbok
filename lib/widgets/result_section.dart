@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:test02/constants/exports.dart';
+import 'package:try_on_hanbok/constants/exports.dart';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
@@ -20,17 +20,21 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ResultSection extends StatefulWidget {
-  const ResultSection({Key? key}) : super(key: key);
+  const ResultSection({super.key});
 
   @override
   State<ResultSection> createState() => _ResultSectionState();
 }
 
 class _ResultSectionState extends State<ResultSection> {
-  // 결과 이미지를 캡처하기 위한 GlobalKey
+  // Result image capturing GlobalKey
   final GlobalKey _resultImageKey = GlobalKey();
-  bool _isSaving = false;
-  // 원본 이미지 데이터를 저장하기 위한 변수
+
+  // 각 버튼에 대한 개별적인 상태 변수 추가
+  bool _isSavingDownload = false;
+  bool _isSavingShare = false;
+
+  // Original image data variable
   Uint8List? _originalImageBytes;
 
   @override
@@ -61,12 +65,12 @@ class _ResultSectionState extends State<ResultSection> {
     bool isTablet = AppSizes.isTablet(context);
     final hanbokState = context.watch<HanbokState>();
 
-    // 디바이스별 이미지 컨테이너 높이 설정
-    double containerHeight = isMobile ? 500 : (isTablet ? 700 : 900);
+    // Device-specific image container height
+    double containerHeight = isMobile ? 320 : (isTablet ? 530 : 740);
 
     return Column(
       children: [
-        // 결과 이미지 영역
+        // Result image area
         RepaintBoundary(
           key: _resultImageKey,
           child: Container(
@@ -82,7 +86,7 @@ class _ResultSectionState extends State<ResultSection> {
               ),
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppColors.backgroundMedium,
+                  color: AppColors.backgroundLight,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: AppColors.border, width: 0.2),
                 ),
@@ -102,23 +106,23 @@ class _ResultSectionState extends State<ResultSection> {
           ),
         ),
 
-        // 이미지와 버튼 사이 간격 - AppSizes 사용하여 디바이스별 간격 설정
+        // Spacing between image and buttons - using AppSizes for device-specific spacing
         Builder(
           builder: (context) {
-            // 디바이스별 간격 설정: 웹 80px, 태블릿 60px, 모바일 20px
+            // Device-specific spacing: 80px for desktop, 60px for tablet, 20px for mobile
             double spacing = 0;
             if (AppSizes.isDesktop(context)) {
               spacing = 80;
             } else if (AppSizes.isTablet(context)) {
               spacing = 60;
             } else {
-              spacing = 20; // 모바일
+              spacing = 20; // Mobile
             }
             return SizedBox(height: spacing);
           },
         ),
 
-        // 액션 버튼 영역 - 결과가 완료되었을 때만 표시
+        // Action button area - show only when result is completed
         if (hanbokState.taskStatus == 'completed')
           Padding(
             padding: EdgeInsets.symmetric(horizontal: isMobile ? 20 : 0),
@@ -131,6 +135,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Download',
                           Icons.download,
                           _saveImage,
+                          _isSavingDownload,
                         ),
                         const SizedBox(height: 20),
                         _buildActionButton(
@@ -138,6 +143,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Share',
                           Icons.share,
                           _shareImage,
+                          _isSavingShare,
                         ),
                         const SizedBox(height: 20),
                         _buildActionButton(
@@ -145,6 +151,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Try On',
                           Icons.refresh,
                           _navigateToGenerate,
+                          false,
                         ),
                       ],
                     )
@@ -156,6 +163,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Download',
                           Icons.download,
                           _saveImage,
+                          _isSavingDownload,
                         ),
                         const SizedBox(width: 50),
                         _buildActionButton(
@@ -163,6 +171,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Share',
                           Icons.share,
                           _shareImage,
+                          _isSavingShare,
                         ),
                         const SizedBox(width: 50),
                         _buildActionButton(
@@ -170,6 +179,7 @@ class _ResultSectionState extends State<ResultSection> {
                           'Try On',
                           Icons.refresh,
                           _navigateToGenerate,
+                          false,
                         ),
                       ],
                     ),
@@ -179,18 +189,41 @@ class _ResultSectionState extends State<ResultSection> {
   }
 
   Widget _buildResultContent(HanbokState hanbokState) {
-    if (hanbokState.isLoading || hanbokState.taskStatus == 'processing') {
+    if (hanbokState.taskStatus == 'pending' ||
+        hanbokState.taskStatus == 'processing') {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+          ),
           const SizedBox(height: 20),
-          Text(
-            '한복 가상 피팅 중입니다...',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 16,
-            ),
+          // 프로그레스 상태 표시를 위한 선형 프로그레스 바 추가
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 40),
+          //   child: LinearProgressIndicator(
+          //     value: hanbokState.progress,
+          //     backgroundColor: AppColors.backgroundLight,
+          //     valueColor: const AlwaysStoppedAnimation<Color>(
+          //       AppColors.primary,
+          //     ),
+          //   ),
+          // ),
+          // const SizedBox(height: 10),
+          // 프로그레스 퍼센트 숫자로 표시
+          // Text(
+          //   '${(hanbokState.progress * 100).toInt()}%',
+          //   style: const TextStyle(
+          //     color: AppColors.textSecondary,
+          //     fontSize: 14,
+          //     fontWeight: FontWeight.bold,
+          //   ),
+          // ),
+          const SizedBox(height: 20),
+          const Text(
+            "Processing hanbok fitting...\nThis may take 10 seconds.",
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
           ),
         ],
       );
@@ -200,14 +233,10 @@ class _ResultSectionState extends State<ResultSection> {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.error_outline,
-            color: AppColors.error,
-            size: 48,
-          ),
+          const Icon(Icons.error_outline, color: AppColors.error, size: 48),
           const SizedBox(height: 20),
-          Text(
-            '오류가 발생했습니다',
+          const Text(
+            'Error',
             style: TextStyle(
               color: AppColors.error,
               fontSize: 16,
@@ -219,7 +248,7 @@ class _ResultSectionState extends State<ResultSection> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 hanbokState.errorMessage!,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,
                 ),
@@ -230,7 +259,8 @@ class _ResultSectionState extends State<ResultSection> {
       );
     }
 
-    if (hanbokState.taskStatus == 'completed' && hanbokState.resultImageUrl != null) {
+    if (hanbokState.taskStatus == 'completed' &&
+        hanbokState.resultImageUrl != null) {
       return Image.network(
         hanbokState.resultImageUrl!,
         fit: BoxFit.fitHeight,
@@ -240,29 +270,23 @@ class _ResultSectionState extends State<ResultSection> {
           if (loadingProgress == null) return child;
           return Center(
             child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded /
-                      loadingProgress.expectedTotalBytes!
-                  : null,
+              value:
+                  loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
             ),
           );
         },
         errorBuilder: (context, error, stackTrace) {
-          return Column(
+          return const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.broken_image,
-                color: AppColors.error,
-                size: 48,
-              ),
-              const SizedBox(height: 20),
+              Icon(Icons.broken_image, color: AppColors.error, size: 48),
+              SizedBox(height: 20),
               Text(
-                '이미지를 불러올 수 없습니다',
-                style: TextStyle(
-                  color: AppColors.error,
-                  fontSize: 16,
-                ),
+                '이미지 로드 실패',
+                style: TextStyle(color: AppColors.error, fontSize: 16),
               ),
             ],
           );
@@ -272,24 +296,22 @@ class _ResultSectionState extends State<ResultSection> {
 
     return const Center(
       child: Text(
-        '결과를 기다리는 중입니다...',
-        style: TextStyle(
-          color: Colors.grey,
-          fontSize: 16,
-        ),
+        '결과를 기다리는 중...',
+        style: TextStyle(color: Colors.grey, fontSize: 16),
       ),
     );
   }
 
-  // 액션 버튼 위젯
+  // Action button widget - 각 버튼별 로딩 상태를 받도록 수정
   Widget _buildActionButton(
     BuildContext context,
     String text,
     IconData icon,
     VoidCallback onPressed,
+    bool isLoading,
   ) {
-    // 모든 버튼의 너비를 Download 버튼 기준으로 통일
-    final double buttonWidth = 150.0; // 모든 버튼의 고정 너비 설정
+    // Button width uniform to Download button
+    final double buttonWidth = 150.0; // Fixed button width setting
     final bool isMobile = AppSizes.isMobile(context);
 
     return StatefulBuilder(
@@ -301,7 +323,7 @@ class _ResultSectionState extends State<ResultSection> {
           onExit: (_) => setState(() => isHovered = false),
           child: AnimatedContainer(
             duration: AppConstants.defaultAnimationDuration,
-            width: buttonWidth, // 고정 너비 적용
+            width: buttonWidth, // Apply fixed width
             decoration: BoxDecoration(
               color: isHovered ? AppColors.buttonHover : AppColors.background,
               borderRadius: BorderRadius.circular(
@@ -331,30 +353,30 @@ class _ResultSectionState extends State<ResultSection> {
                 borderRadius: BorderRadius.circular(
                   AppConstants.defaultButtonBorderRadius,
                 ),
-                onTap: _isSaving ? null : onPressed,
+                onTap: isLoading ? null : onPressed,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 12,
                   ),
                   child:
-                      _isSaving && (text == 'Download' || text == 'Share')
-                          ? Center(
-                            // 로딩 인디케이터 중앙 정렬
+                      isLoading
+                          ? const Center(
+                            // Center loading indicator
                             child: SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.textSecondary,
+                                  AppColors.primary,
                                 ),
                               ),
                             ),
                           )
                           : Row(
                             mainAxisAlignment:
-                                MainAxisAlignment.center, // 내용 중앙 정렬
+                                MainAxisAlignment.center, // Center content
                             children: [
                               Icon(
                                 icon,
@@ -377,7 +399,9 @@ class _ResultSectionState extends State<ResultSection> {
                                           ? FontWeight.bold
                                           : FontWeight.normal,
                                   fontSize:
-                                      isMobile ? 14 : null, // 모바일에서 텍스트 크기 조정
+                                      isMobile
+                                          ? 14
+                                          : null, // Adjust text size for mobile
                                 ),
                               ),
                             ],
@@ -391,30 +415,30 @@ class _ResultSectionState extends State<ResultSection> {
     );
   }
 
-  // 결과 이미지 저장 함수
+  // Function to save result image
   Future<void> _saveImage() async {
-    if (_isSaving) return;
+    if (_isSavingDownload) return;
 
     setState(() {
-      _isSaving = true;
+      _isSavingDownload = true;
     });
 
     try {
-      // 원본 이미지 바이트가 로드되지 않았을 경우 다시 로드 시도
+      // Try to reload original image if not loaded
       if (_originalImageBytes == null) {
         await _loadOriginalImage();
         if (_originalImageBytes == null) {
-          _showMessage('이미지를 불러올 수 없습니다.');
+          _showMessage('Failed to load image.');
           return;
         }
       }
 
       if (kIsWeb) {
-        // 웹에서는 다운로드 팝업을 표시
+        // Show download popup on web
         _downloadImageForWeb(_originalImageBytes!);
-        _showMessage('이미지 다운로드가 시작되었습니다.');
+        _showSuccessMessage('Image download has started.');
       } else {
-        // 모바일에서는 갤러리에 저장
+        // Mobile: save to gallery
         try {
           final result = await ImageGallerySaver.saveImage(
             _originalImageBytes!,
@@ -422,32 +446,32 @@ class _ResultSectionState extends State<ResultSection> {
             name: 'hanbok_tryon_${DateTime.now().millisecondsSinceEpoch}.png',
           );
 
-          // 결과 확인
+          // Result confirmation
           if (result['isSuccess'] == true) {
-            _showMessage('이미지가 갤러리에 저장되었습니다.');
+            _showSuccessMessage('Image saved to gallery.');
           } else {
-            _showMessage('이미지 저장에 실패했습니다.');
+            _showMessage('Failed to save image.');
           }
         } catch (e) {
-          _showMessage('갤러리 저장 중 오류: $e');
+          _showMessage('Error while saving to gallery: $e');
         }
       }
     } catch (e) {
-      _showMessage('오류가 발생했습니다: $e');
+      _showMessage('An error occurred: $e');
     } finally {
       setState(() {
-        _isSaving = false;
+        _isSavingDownload = false;
       });
     }
   }
 
-  // 웹에서 이미지 다운로드 처리
+  // Web image download processing
   void _downloadImageForWeb(Uint8List bytes) {
-    // 이미지를 data URL로 변환
+    // Convert image to data URL
     final base64 = base64Encode(bytes);
     final url = 'data:image/png;base64,$base64';
 
-    // 다운로드 링크 생성
+    // Create download link
     final anchor =
         html.AnchorElement(href: url)
           ..setAttribute(
@@ -456,35 +480,35 @@ class _ResultSectionState extends State<ResultSection> {
           )
           ..style.display = 'none';
 
-    // 문서에 링크 추가 및 클릭
+    // Add link to document and click
     html.document.body?.append(anchor);
     anchor.click();
 
-    // 링크 제거
+    // Remove link
     anchor.remove();
   }
 
-  // 이미지 공유 함수
+  // Image sharing function
   Future<void> _shareImage() async {
-    if (_isSaving) return;
+    if (_isSavingShare) return;
 
     setState(() {
-      _isSaving = true;
+      _isSavingShare = true;
     });
 
     try {
-      // 원본 이미지 바이트가 로드되지 않았을 경우 다시 로드 시도
+      // Try to reload original image if not loaded
       if (_originalImageBytes == null) {
         await _loadOriginalImage();
         if (_originalImageBytes == null) {
-          _showMessage('이미지를 불러올 수 없습니다.');
+          _showMessage('Failed to load image.');
           return;
         }
       }
 
       if (kIsWeb) {
         try {
-          // 웹에서 Web Share API를 사용하여 공유 (지원되는 브라우저에서만)
+          // Use Web Share API to share (supported browsers only)
           final navigatorObj = html.window.navigator;
           final hasShareApi = navigatorObj.share != null;
 
@@ -499,69 +523,85 @@ class _ResultSectionState extends State<ResultSection> {
 
               await navigatorObj.share({
                 'files': [file],
-                'title': '한복 가상 피팅',
-                'text': '한복 가상 피팅 이미지를 공유합니다!',
+                'title': 'Hanbok Virtual Fitting',
+                'text': 'Sharing my Hanbok virtual fitting image!',
               });
-              _showMessage('공유가 완료되었습니다.');
+              _showSuccessMessage('Share completed.');
             } catch (e) {
-              // 사용자가 공유를 취소하거나 오류 발생 시
-              _showMessage('공유가 취소되었거나 오류가 발생했습니다.');
+              // When user cancels sharing or error occurs
+              _showMessage('Share was canceled or an error occurred.');
             }
           } else {
-            // Share API를 사용할 수 없는 경우 대체 방법으로 다운로드 제공
+            // When Share API is not available, provide download as alternative
             if (_originalImageBytes != null) {
               _downloadImageForWeb(_originalImageBytes!);
             }
-            _showMessage('이 브라우저에서는 공유가 지원되지 않아 다운로드를 대신 진행합니다.');
+            _showMessage(
+              'Sharing is not supported in this browser. Downloading instead.',
+            );
           }
         } catch (e) {
           if (_originalImageBytes != null) {
             _downloadImageForWeb(_originalImageBytes!);
           }
-          _showMessage('공유 중 오류가 발생하여 다운로드로 대체합니다: $e');
+          _showMessage('Error during sharing, downloading instead: $e');
         }
       } else {
         try {
-          // 임시 파일로 저장
+          // Save as temporary file
           final tempDir = await getTemporaryDirectory();
           final file = File('${tempDir.path}/hanbok_share.png');
           await file.writeAsBytes(_originalImageBytes!);
 
-          // 이미지 공유
+          // Share image
           await Share.shareXFiles([
             XFile(file.path),
-          ], text: '한복 가상 피팅 이미지를 공유합니다!');
+          ], text: 'Sharing my Hanbok virtual fitting image!');
+          _showSuccessMessage('Share completed.');
         } catch (e) {
-          _showMessage('파일 공유 중 오류: $e');
+          _showMessage('Error while sharing file: $e');
         }
       }
     } catch (e) {
-      _showMessage('오류가 발생했습니다: $e');
+      _showMessage('An error occurred: $e');
     } finally {
       setState(() {
-        _isSaving = false;
+        _isSavingShare = false;
       });
     }
   }
 
-  // Generate 페이지로 이동 (첫 번째 프리셋 선택)
+  // Navigate to Generate page (select first preset)
   void _navigateToGenerate() {
-    // 첫 번째 모던 한복 프리셋을 선택해서 이동
-    Navigator.pushNamed(
-      context,
-      AppConstants.generateRoute,
-      arguments: AppConstants.modernHanbokList[0], // 첫 번째 프리셋 지정
-    );
+    // HanbokState 인스턴스 가져오기
+    final hanbokState = context.read<HanbokState>();
+
+    // 현재 사용 가능한 프리셋이 있는지 확인
+    if (hanbokState.modernPresets.isNotEmpty) {
+      // 모던 프리셋 목록에서 첫 번째 프리셋 사용
+      Navigator.pushNamed(
+        context,
+        AppConstants.generateRoute,
+        arguments: hanbokState.modernPresets.first.imagePath, // 첫 번째 프리셋
+      );
+    } else {
+      // 프리셋이 없는 경우 (로딩 실패 등), 기본 하드코딩된 프리셋으로 대체
+      Navigator.pushNamed(
+        context,
+        AppConstants.generateRoute,
+        arguments: AppConstants.modernHanbokList[0], // 첫 번째 기본 프리셋
+      );
+    }
   }
 
-  // 위젯을 이미지로 캡처 (필요시 UI 캡처용으로 유지)
+  // Capture widget as image (keep for UI capture if needed)
   Future<Uint8List?> _captureImage() async {
     try {
       final RenderRepaintBoundary boundary =
           _resultImageKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
 
-      // 렌더링된 이미지 캡처
+      // Render image capture
       final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       final ByteData? byteData = await image.toByteData(
         format: ui.ImageByteFormat.png,
@@ -571,16 +611,24 @@ class _ResultSectionState extends State<ResultSection> {
         return byteData.buffer.asUint8List();
       }
     } catch (e) {
-      debugPrint('이미지 캡처 중 오류: $e');
+      debugPrint('Error capturing image: $e');
     }
     return null;
   }
 
-  // 메시지 표시
+  // 일반 메시지 표시
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.primary),
+    );
+  }
+
+  // 성공 메시지 표시 (초록색 배경)
+  void _showSuccessMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.success),
+    );
   }
 }

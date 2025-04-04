@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:typed_data';
 import 'dart:math' as math;
 // dart:io는 웹에서 지원되지 않으므로 조건부 import
 // ignore: avoid_web_libraries_in_flutter
-import 'dart:io' if (dart.library.html) 'dart:ui' as ui;
-import 'package:test02/constants/exports.dart';
-import 'package:test02/widgets/select_section.dart';
+import 'package:try_on_hanbok/constants/exports.dart';
+import 'package:try_on_hanbok/widgets/select_section.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_services/hanbok_state.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_services/supabase_services.dart';
+import 'dart:async';
 
 // 점선 원 그리는 커스텀 페인터
 class DashedCirclePainter extends CustomPainter {
@@ -78,11 +77,11 @@ class GenerateSection extends StatefulWidget {
   final ScrollController? externalScrollController;
 
   const GenerateSection({
-    Key? key,
+    super.key,
     this.selectedHanbokImage,
     this.usePadding = false,
     this.externalScrollController,
-  }) : super(key: key);
+  });
 
   @override
   State<GenerateSection> createState() => _GenerateSectionState();
@@ -94,7 +93,7 @@ class _GenerateSectionState extends State<GenerateSection> {
 
   // 한복 프리셋 이미지를 API로부터 가져오도록 수정
   List<String> _hanbokPresets = [];
-  
+
   // 최근 선택한 한복 이미지를 저장하는 리스트 (최대 5개)
   List<String> _recentlySelectedHanboks = [];
 
@@ -111,28 +110,83 @@ class _GenerateSectionState extends State<GenerateSection> {
   ScrollController get _scrollController =>
       widget.externalScrollController ?? _internalScrollController;
 
+  // 이미지 업로드 중 상태 변수
+  bool _isUploading = false;
+
+  // 이미지 업로드 진행률 (0.0 ~ 1.0)
+  double _uploadProgress = 0.0;
+
+  // 업로드 타임아웃을 위한 타이머
+  Timer? _uploadTimeoutTimer;
+
+  // 최대 업로드 시간 (초)
+  final int _maxUploadTimeSeconds = 10;
+
+  // 업로드 오류 메시지
+  String? _uploadErrorMessage;
+
+  // 허용되는 이미지 파일 크기 (10MB)
+  final int _maxImageSizeBytes = 10 * 1024 * 1024;
+
+  // 허용되는 최소/최대 해상도
+  final int _minImageDimension = 200;
+  final int _maxImageDimension = 4000;
+
   @override
   void initState() {
     super.initState();
+
+    // 디버그 로그 추가
+    debugPrint(
+      'GenerateSection initState 실행, 외부 이미지: ${widget.selectedHanbokImage}',
+    );
+
     // 외부에서 전달된 이미지가 있으면 설정
     if (widget.selectedHanbokImage != null) {
+      debugPrint(
+        'GenerateSection: 외부에서 선택된 이미지 설정 - ${widget.selectedHanbokImage}',
+      );
       _selectedHanbokImage = widget.selectedHanbokImage;
     }
-    
+
     // 초기화 작업
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // 최근 선택한 한복 이미지 불러오기
       await _loadRecentlySelectedHanboks();
-      
+
       // 외부에서 전달된 이미지가 있으면 최근 목록에 추가
       if (widget.selectedHanbokImage != null) {
+        debugPrint(
+          'GenerateSection: 최근 목록에 이미지 추가 - ${widget.selectedHanbokImage}',
+        );
         await _addToRecentHanboks(widget.selectedHanbokImage!);
       }
-      
+
       // Hanbok State 초기화 (프리셋이 비어있을 때만 초기화)
       final hanbokState = context.read<HanbokState>();
-      if (hanbokState.modernPresets.isEmpty || hanbokState.traditionalPresets.isEmpty) {
+      debugPrint(
+        'Hanbok State 상태 - Modern: ${hanbokState.modernPresets.length}, '
+        'Traditional: ${hanbokState.traditionalPresets.length}',
+      );
+
+      if (hanbokState.modernPresets.isEmpty ||
+          hanbokState.traditionalPresets.isEmpty) {
+        debugPrint('Hanbok State 초기화 시작');
         await hanbokState.initialize();
+        debugPrint(
+          'Hanbok State 초기화 완료 - Modern: ${hanbokState.modernPresets.length}, '
+          'Traditional: ${hanbokState.traditionalPresets.length}',
+        );
+
+        // 외부에서 이미지를 받지 않았는데 HanbokState가 비어있었다면,
+        // HanbokState가 채워진 후 첫 번째 이미지를 선택
+        if (_selectedHanbokImage == null &&
+            hanbokState.modernPresets.isNotEmpty) {
+          debugPrint('선택된 이미지가 없어 첫 번째 이미지로 설정');
+          setState(() {
+            _selectedHanbokImage = hanbokState.modernPresets.first.imagePath;
+          });
+        }
       }
     });
   }
@@ -143,10 +197,13 @@ class _GenerateSectionState extends State<GenerateSection> {
     // 속성이 변경되었을 때 상태 업데이트
     if (widget.selectedHanbokImage != null &&
         widget.selectedHanbokImage != oldWidget.selectedHanbokImage) {
+      debugPrint(
+        'GenerateSection: didUpdateWidget에서 이미지 업데이트 - ${widget.selectedHanbokImage}',
+      );
       setState(() {
         _selectedHanbokImage = widget.selectedHanbokImage;
       });
-      
+
       // 비동기로 최근 선택 목록에 추가
       if (widget.selectedHanbokImage != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -181,19 +238,21 @@ class _GenerateSectionState extends State<GenerateSection> {
         }
       }
     });
-    
+
     // 로컬 저장소에 저장
     await _saveRecentlySelectedHanboks();
   }
-  
+
   // 로컬 저장소에서 최근 선택한 한복 이미지 불러오기
   Future<void> _loadRecentlySelectedHanboks() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedHanboks = prefs.getStringList('recent_hanboks') ?? [];
-      
-      debugPrint('Loaded ${savedHanboks.length} recently selected hanboks from preferences');
-      
+
+      debugPrint(
+        'Loaded ${savedHanboks.length} recently selected hanboks from preferences',
+      );
+
       if (mounted) {
         setState(() {
           _recentlySelectedHanboks = savedHanboks;
@@ -209,13 +268,15 @@ class _GenerateSectionState extends State<GenerateSection> {
       }
     }
   }
-  
+
   // 로컬 저장소에 최근 선택한 한복 이미지 저장
   Future<void> _saveRecentlySelectedHanboks() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('recent_hanboks', _recentlySelectedHanboks);
-      debugPrint('Saved ${_recentlySelectedHanboks.length} recently selected hanboks to preferences');
+      debugPrint(
+        'Saved ${_recentlySelectedHanboks.length} recently selected hanboks to preferences',
+      );
     } catch (e) {
       debugPrint('Error saving recent hanboks: $e');
     }
@@ -226,7 +287,7 @@ class _GenerateSectionState extends State<GenerateSection> {
     setState(() {
       _selectedHanbokImage = imagePath;
     });
-    
+
     // 최근 선택 목록에 추가 (이미 있는 이미지의 순서는 변경하지 않음)
     await _addToRecentHanboks(imagePath);
   }
@@ -292,58 +353,165 @@ class _GenerateSectionState extends State<GenerateSection> {
   }
 
   Future<void> _pickImage() async {
+    // 업로드 오류 메시지 초기화
+    setState(() {
+      _uploadErrorMessage = null;
+    });
+
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
       if (image != null) {
+        // 1. 파일 사전 검증
+        // 파일 크기 검증
+        final int fileSize = await image.length();
+        if (fileSize > _maxImageSizeBytes) {
+          setState(() {
+            _uploadErrorMessage = 'Image is too large (max 10MB)';
+          });
+          _showErrorMessage('Image is too large (max 10MB)');
+          return;
+        }
+
+        // 이미지 바이트 읽기
         final bytes = await image.readAsBytes();
+
+        // 이미지 해상도 검증은 웹 환경에서 제한적으로 동작하므로 스킵
+        // 파일 크기 제한으로 간접적으로 해상도를 제한함
+
+        // 이미지 로딩 중 상태로 설정
         setState(() {
-          _imageBytes = bytes;
+          _isUploading = true;
+          _uploadProgress = 0.0;
         });
 
-        // Upload image using Supabase service
-        final hanbokState = context.read<HanbokState>();
-        
-        // 로딩 상태 표시
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('이미지를 업로드 중입니다...'),
-            duration: Duration(seconds: 1),
-          ),
+        // 2. 업로드 제한 시간 설정
+        _uploadTimeoutTimer?.cancel();
+        _uploadTimeoutTimer = Timer(
+          Duration(seconds: _maxUploadTimeSeconds),
+          () {
+            if (_isUploading) {
+              // 타임아웃 발생 시 업로드 상태 초기화
+              setState(() {
+                _isUploading = false;
+                _uploadProgress = 0.0;
+                _uploadErrorMessage = 'Upload timeout. Please try again.';
+              });
+              _showErrorMessage('Upload timeout. Please try again.');
+            }
+          },
         );
-        
-        await hanbokState.uploadUserImage(bytes, 'image/jpeg');
 
-        // Show error if upload failed
-        if (hanbokState.taskStatus == 'error') {
+        // HanbokState를 일회성으로 가져옴 (구독 없음)
+        final hanbokState = Provider.of<HanbokState>(context, listen: false);
+
+        // 디버그 로그 추가
+        debugPrint('Uploading image...');
+
+        // 업로드 진행 시뮬레이션 (실제 진행률을 추적할 수 없는 경우를 위한 시각적 피드백)
+        _startUploadProgressSimulation();
+
+        try {
+          // 5. 캐싱 및 서버 응답 최적화 (헤더 추가)
+          // 백엔드에 이미지 업로드 수행
+          await hanbokState.uploadUserImage(bytes, 'image/jpeg');
+
+          // 타이머 취소
+          _uploadTimeoutTimer?.cancel();
+
+          // 업로드 상태 로그
+          debugPrint('Upload status: ${hanbokState.taskStatus}');
+          debugPrint('Uploaded image URL: ${hanbokState.uploadedImageUrl}');
+
+          // 업로드 성공 여부 확인 (taskStatus가 completed이고 URL이 존재하는지)
+          final bool uploadSuccess =
+              hanbokState.taskStatus == 'completed' &&
+              hanbokState.uploadedImageUrl != null;
+
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(hanbokState.errorMessage ?? '이미지 업로드에 실패했습니다.'),
-              ),
-            );
+            setState(() {
+              _isUploading = false;
+              _uploadProgress = 0.0;
+
+              // 업로드 성공 시에만 이미지 표시
+              if (uploadSuccess) {
+                _imageBytes = bytes;
+                _uploadErrorMessage = null;
+              } else {
+                // 실패 시 오류 메시지 표시
+                _uploadErrorMessage =
+                    hanbokState.errorMessage ?? 'Failed to upload image';
+                _showErrorMessage(_uploadErrorMessage!);
+              }
+            });
           }
-        } else if (hanbokState.uploadedImageUrl != null) {
-          // 업로드 성공 메시지
+        } catch (uploadError) {
+          // 타이머 취소
+          _uploadTimeoutTimer?.cancel();
+
+          // 업로드 과정에서 발생한 오류 처리
+          debugPrint('Upload error: $uploadError');
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('이미지가 성공적으로 업로드되었습니다.'),
-                duration: Duration(seconds: 1),
-              ),
-            );
+            setState(() {
+              _isUploading = false;
+              _uploadProgress = 0.0;
+              _uploadErrorMessage = 'Error uploading image: $uploadError';
+            });
+
+            _showErrorMessage('Error uploading image: $uploadError');
           }
         }
       }
     } catch (e) {
-      // 에러 처리
-      debugPrint('Error picking image: $e');
-      // 사용자에게 오류 메시지 표시
+      // 타이머 취소
+      _uploadTimeoutTimer?.cancel();
+
+      // 이미지 선택 과정에서 발생한 오류 처리
+      debugPrint('Image picking error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('이미지를 선택하는 중 오류가 발생했습니다: $e')),
-        );
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0.0;
+          _uploadErrorMessage = 'Error selecting image: $e';
+        });
+
+        _showErrorMessage('Error selecting image: $e');
       }
     }
+  }
+
+  // 오류 메시지 표시 메서드
+  void _showErrorMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.primary,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // 업로드 진행률 시뮬레이션 (시각적 피드백을 위한 목적)
+  void _startUploadProgressSimulation() {
+    const progressUpdateInterval = Duration(milliseconds: 150);
+    const progressIncrementPerUpdate = 0.05;
+
+    // 진행률 시뮬레이션을 위한 타이머
+    Timer.periodic(progressUpdateInterval, (timer) {
+      if (!_isUploading) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        // 90%까지만 채우고, 실제 완료되면 100%로 설정
+        if (_uploadProgress < 0.9) {
+          _uploadProgress += progressIncrementPerUpdate;
+          if (_uploadProgress > 0.9) {
+            _uploadProgress = 0.9;
+          }
+        }
+      });
+    });
   }
 
   // 한복 이미지 선택 함수 (순서 유지 버전)
@@ -351,7 +519,7 @@ class _GenerateSectionState extends State<GenerateSection> {
     setState(() {
       _selectedHanbokImage = imagePath;
     });
-    
+
     // 최근 선택 목록에 추가 (순서 유지)
     await _addToRecentHanboks(imagePath);
   }
@@ -360,40 +528,43 @@ class _GenerateSectionState extends State<GenerateSection> {
   // 이 메서드는 초기화 시에만 호출되도록 변경
   Future<void> _loadPresetImages() async {
     final hanbokState = context.read<HanbokState>();
-    
+
     // 프리셋이 이미 로드되어 있으면 다시 로드하지 않음
-    if (!hanbokState.isLoading && (hanbokState.modernPresets.isNotEmpty || hanbokState.traditionalPresets.isNotEmpty)) {
+    if (!hanbokState.isLoading &&
+        (hanbokState.modernPresets.isNotEmpty ||
+            hanbokState.traditionalPresets.isNotEmpty)) {
       debugPrint('Presets already loaded, skipping initialization');
       _updatePresetList(hanbokState);
       return;
     }
-    
+
     // 디버그 로그: 한복 상태 확인
     debugPrint('Loading preset images...');
-    
+
     // 이미지 목록이 비어 있는 경우만 초기화
-    if (hanbokState.modernPresets.isEmpty && hanbokState.traditionalPresets.isEmpty) {
+    if (hanbokState.modernPresets.isEmpty &&
+        hanbokState.traditionalPresets.isEmpty) {
       debugPrint('Presets are empty, initializing...');
       await hanbokState.initialize();
     }
-    
+
     _updatePresetList(hanbokState);
   }
-  
+
   // 프리셋 목록 업데이트
   void _updatePresetList(HanbokState hanbokState) {
     List<String> presets = [];
-    
+
     // 모던 한복 이미지 경로 추가
     for (var modern in hanbokState.modernPresets) {
       presets.add(modern.imagePath);
     }
-    
+
     // 전통 한복 이미지 경로 추가
     for (var traditional in hanbokState.traditionalPresets) {
       presets.add(traditional.imagePath);
     }
-    
+
     if (presets.isNotEmpty) {
       debugPrint('Updated preset list with ${presets.length} items');
       // 이미지 URL 샘플 출력
@@ -403,7 +574,7 @@ class _GenerateSectionState extends State<GenerateSection> {
     } else {
       debugPrint('No presets available after update');
     }
-    
+
     if (mounted) {
       setState(() {
         _hanbokPresets = presets;
@@ -466,10 +637,7 @@ class _GenerateSectionState extends State<GenerateSection> {
                                 isHovered
                                     ? AppColors.primary
                                     : AppColors.border,
-                            width:
-                                isHovered
-                                    ? AppConstants.borderWidthThick
-                                    : AppConstants.borderWidthThin,
+                            width: 1,
                           ),
                           boxShadow:
                               isHovered
@@ -490,35 +658,66 @@ class _GenerateSectionState extends State<GenerateSection> {
                             ),
                             onTap: () async {
                               // 양쪽 이미지가 모두 선택되었는지 확인
-                              if (_imageBytes != null && _selectedHanbokImage != null) {
-                                final hanbokState = context.read<HanbokState>();
-                                
-                                try {
-                                  // 업로드된 이미지 URL이 있는지 확인
-                                  if (hanbokState.uploadedImageUrl == null) {
-                                    throw Exception('이미지가 제대로 업로드되지 않았습니다.');
-                                  }
-                                  
-                                  await hanbokState.generateHanbokFitting(_selectedHanbokImage!);
-                                  if (mounted) {
-                                Navigator.pushNamed(
+                              if (_imageBytes != null &&
+                                  _selectedHanbokImage != null) {
+                                // HanbokState를 일회성으로 가져옴 (구독 없음)
+                                final hanbokState = Provider.of<HanbokState>(
                                   context,
-                                  AppConstants.resultRoute,
+                                  listen: false,
                                 );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
+
+                                try {
+                                  // 이미 처리 중이면 중복 실행 방지
+                                  if (hanbokState.isLoading ||
+                                      hanbokState.taskStatus == 'processing') {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(hanbokState.errorMessage ?? '가상 피팅 생성에 실패했습니다.'),
+                                      const SnackBar(
+                                        content: Text('처리 중입니다. 잠시만 기다려주세요.'),
+                                        backgroundColor: AppColors.primary,
                                       ),
                                     );
+                                    return;
                                   }
+
+                                  // 로딩 상태로 설정 (결과 페이지에서 로딩 UI 표시)
+                                  hanbokState.setTaskStatus('processing');
+                                  hanbokState.setLoading(true);
+                                  // 진행률 초기화
+                                  hanbokState.setProgress(0.0);
+
+                                  // 결과 페이지로 즉시 이동
+                                  if (mounted) {
+                                    Navigator.pushNamed(
+                                      context,
+                                      AppConstants.resultRoute,
+                                    );
+                                  }
+
+                                  // 업로드된 이미지 URL 확인 및 에러 처리
+                                  if (hanbokState.uploadedImageUrl == null) {
+                                    throw Exception(
+                                      'Image was not properly uploaded. Please try again.',
+                                    );
+                                  }
+
+                                  // 백그라운드에서 생성 요청 시도
+                                  await hanbokState.generateHanbokFitting(
+                                    _selectedHanbokImage!,
+                                  );
+                                } catch (e) {
+                                  // 오류 발생 시 상태 업데이트 (화면 전환 후 에러 표시)
+                                  debugPrint('Try On error: $e');
+                                  hanbokState.setErrorMessage(e.toString());
+                                  hanbokState.setTaskStatus('error');
+                                  hanbokState.setLoading(false);
+                                  hanbokState.setProgress(0.0); // 오류 시 진행률 초기화
                                 }
                               } else {
+                                // 이미지 선택 안됨 메시지
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('사용자 이미지와 한복 이미지를 모두 선택해주세요'),
+                                    content: Text('Please select both user image and hanbok image'),
+                                    backgroundColor: AppColors.primary,
                                   ),
                                 );
                               }
@@ -537,6 +736,7 @@ class _GenerateSectionState extends State<GenerateSection> {
                                           : FontWeight.normal,
                                   fontSize:
                                       isMobile ? 14 : (isTablet ? 16 : null),
+                                  fontFamily: 'Times',
                                 ),
                               ),
                             ),
@@ -565,6 +765,8 @@ class _GenerateSectionState extends State<GenerateSection> {
                 _scrollToTop();
               },
               selectedImage: _selectedHanbokImage,
+              isBestMode: false, // 일반 모드 사용 (BestSection 모드 아님)
+              parentScrollController: _scrollController, // 스크롤 컨트롤러 전달
             ),
           ),
         ],
@@ -589,7 +791,7 @@ class _GenerateSectionState extends State<GenerateSection> {
     final totalPresetHeight = (presetSize * 5) + (20 * 4);
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 25),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
       decoration: BoxDecoration(
         color: AppColors.backgroundLight,
         borderRadius: BorderRadius.circular(20),
@@ -627,7 +829,7 @@ class _GenerateSectionState extends State<GenerateSection> {
                             ),
                             SizedBox(height: 10),
                             Text(
-                              '한복을 선택해주세요',
+                              'Please select a hanbok',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Color(0xFFAAAAAA),
@@ -640,41 +842,116 @@ class _GenerateSectionState extends State<GenerateSection> {
                         borderRadius: BorderRadius.circular(20),
                         child: Image.network(
                           _selectedHanbokImage!,
-                          fit: BoxFit.contain,
+                          fit: BoxFit.cover, // 이미지를 꽉 채우도록 변경
                           height: totalPresetHeight,
-                          alignment: Alignment.center,
+                          alignment: Alignment.topCenter, // 상단 정렬
+                          width: double.infinity, // 너비를 최대로 설정
                           loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
+                            if (loadingProgress == null) {
+                              // 로딩 완료
+                              debugPrint('이미지 로딩 완료: $_selectedHanbokImage');
+                              return child;
+                            }
+                            // 로딩 중 상태
+                            debugPrint(
+                              '이미지 로딩 중: ${loadingProgress.cumulativeBytesLoaded} / '
+                              '${loadingProgress.expectedTotalBytes ?? 'unknown'}',
+                            );
                             return Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes != null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(
+                                    value:
+                                        loadingProgress.expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                    .cumulativeBytesLoaded /
+                                                loadingProgress
+                                                    .expectedTotalBytes!
+                                            : null,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Loading image...',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF888888),
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },
                           errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: AppColors.backgroundMedium,
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.broken_image,
-                                      size: 48,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      '이미지를 불러올 수 없습니다',
-                                      style: TextStyle(
-                                        fontSize: 14,
+                            // 에러 발생 시
+                            debugPrint('이미지 로드 에러: $error');
+                            debugPrint('이미지 URL: $_selectedHanbokImage');
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              // 에러 발생 시 HanbokState 재초기화 시도
+                              if (mounted) {
+                                final hanbokState = Provider.of<HanbokState>(
+                                  context,
+                                  listen: false,
+                                );
+                                if (hanbokState.modernPresets.isEmpty) {
+                                  hanbokState.initialize();
+                                }
+                              }
+                            });
+                            return GestureDetector(
+                              onTap: () {
+                                // 탭 시 이미지 재로드 시도
+                                debugPrint('이미지 재로드 시도');
+                                if (mounted) {
+                                  final hanbokState = Provider.of<HanbokState>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  // 재초기화
+                                  hanbokState.initialize().then((_) {
+                                    if (hanbokState.modernPresets.isNotEmpty) {
+                                      // modernPresets가 있으면 첫 번째 이미지로 설정
+                                      setState(() {
+                                        _selectedHanbokImage =
+                                            hanbokState
+                                                .modernPresets
+                                                .first
+                                                .imagePath;
+                                      });
+                                    }
+                                  });
+                                }
+                              },
+                              child: Container(
+                                color: AppColors.backgroundMedium,
+                                child: const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.broken_image,
+                                        size: 48,
                                         color: AppColors.textSecondary,
                                       ),
-                                    ),
-                                  ],
+                                      SizedBox(height: 10),
+                                      Text(
+                                        'Failed to load image',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        'Tap to retry',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -693,9 +970,9 @@ class _GenerateSectionState extends State<GenerateSection> {
             child: Column(
               children: [
                 for (int i = 0; i < 5; i++) ...[
-                  if (i < _recentlySelectedHanboks.length) 
+                  if (i < _recentlySelectedHanboks.length)
                     _buildPresetButton(context, _recentlySelectedHanboks[i])
-                  else 
+                  else
                     _buildEmptyPresetButton(context),
                   if (i < 4) const SizedBox(height: 20),
                 ],
@@ -758,7 +1035,7 @@ class _GenerateSectionState extends State<GenerateSection> {
                           ),
                           SizedBox(height: 10),
                           Text(
-                            '한복을 선택해주세요',
+                            'Please select a hanbok',
                             style: TextStyle(
                               fontSize: 14,
                               color: Color(0xFFAAAAAA),
@@ -771,41 +1048,115 @@ class _GenerateSectionState extends State<GenerateSection> {
                       borderRadius: BorderRadius.circular(20),
                       child: Image.network(
                         _selectedHanbokImage!,
-                        fit: BoxFit.contain,
+                        fit: BoxFit.cover, // 이미지를 꽉 채우도록 변경
                         height: containerHeight,
-                        alignment: Alignment.center,
+                        alignment: Alignment.topCenter, // 상단 정렬
+                        width: double.infinity, // 너비를 최대로 설정
                         loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
+                          if (loadingProgress == null) {
+                            // 로딩 완료
+                            debugPrint('이미지 로딩 완료: $_selectedHanbokImage');
+                            return child;
+                          }
+                          // 로딩 중 상태
+                          debugPrint(
+                            '이미지 로딩 중: ${loadingProgress.cumulativeBytesLoaded} / '
+                            '${loadingProgress.expectedTotalBytes ?? 'unknown'}',
+                          );
                           return Center(
-                            child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value:
+                                      loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress
+                                                  .cumulativeBytesLoaded /
+                                              loadingProgress
+                                                  .expectedTotalBytes!
+                                          : null,
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Loading image...',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Color(0xFF888888),
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
                         errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: AppColors.backgroundMedium,
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.broken_image,
-                                    size: 48,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    '이미지를 불러올 수 없습니다',
-                                    style: TextStyle(
-                                      fontSize: 14,
+                          // 에러 발생 시
+                          debugPrint('이미지 로드 에러: $error');
+                          debugPrint('이미지 URL: $_selectedHanbokImage');
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            // 에러 발생 시 HanbokState 재초기화 시도
+                            if (mounted) {
+                              final hanbokState = Provider.of<HanbokState>(
+                                context,
+                                listen: false,
+                              );
+                              if (hanbokState.modernPresets.isEmpty) {
+                                hanbokState.initialize();
+                              }
+                            }
+                          });
+                          return GestureDetector(
+                            onTap: () {
+                              // 탭 시 이미지 재로드 시도
+                              debugPrint('이미지 재로드 시도');
+                              if (mounted) {
+                                final hanbokState = Provider.of<HanbokState>(
+                                  context,
+                                  listen: false,
+                                );
+                                // 재초기화
+                                hanbokState.initialize().then((_) {
+                                  if (hanbokState.modernPresets.isNotEmpty) {
+                                    // modernPresets가 있으면 첫 번째 이미지로 설정
+                                    setState(() {
+                                      _selectedHanbokImage =
+                                          hanbokState
+                                              .modernPresets
+                                              .first
+                                              .imagePath;
+                                    });
+                                  }
+                                });
+                              }
+                            },
+                            child: Container(
+                              color: AppColors.backgroundMedium,
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.broken_image,
+                                      size: 48,
                                       color: AppColors.textSecondary,
                                     ),
-                                  ),
-                                ],
+                                    SizedBox(height: 10),
+                                    Text(
+                                      'Failed to load image',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Tap to retry',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -833,9 +1184,9 @@ class _GenerateSectionState extends State<GenerateSection> {
               child: Row(
                 children: [
                   for (int i = 0; i < 5; i++) ...[
-                    if (i < _recentlySelectedHanboks.length) 
+                    if (i < _recentlySelectedHanboks.length)
                       _buildPresetButton(context, _recentlySelectedHanboks[i])
-                    else 
+                    else
                       _buildEmptyPresetButton(context),
                     if (i < 4) const SizedBox(width: 10),
                   ],
@@ -855,18 +1206,101 @@ class _GenerateSectionState extends State<GenerateSection> {
     bool isMobile = AppSizes.isMobile(context);
 
     return InkWell(
-      onTap: _pickImage,
+      onTap: _isUploading ? null : _pickImage, // 업로드 중에는 클릭 불가
       child: Container(
         width: buttonSize,
         height: buttonSize,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: AppColors.background,
-          // 실선 테두리 제거
         ),
         child:
-            _imageBytes != null
-                ? ClipOval(child: Image.memory(_imageBytes!, fit: BoxFit.cover))
+            _isUploading
+                // 업로드 중 - 진행률 및 스피닝 애니메이션 표시
+                ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 스피닝 로더
+                      SizedBox(
+                        width: buttonSize * 0.3,
+                        height: buttonSize * 0.3,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2.0,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      // 진행률 텍스트
+                      const SizedBox(height: 5),
+                      Text(
+                        '${(_uploadProgress * 100).toInt()}%',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      // 진행률 바
+                      const SizedBox(height: 2),
+                      Container(
+                        width: buttonSize * 0.6,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(2),
+                          color: AppColors.backgroundMedium,
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: _uploadProgress,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(2),
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                // 업로드 오류 상태
+                : _uploadErrorMessage != null
+                // 오류 아이콘 표시
+                ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.red[700],
+                        size: buttonSize * 0.25,
+                      ),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        width: buttonSize * 0.8,
+                        child: Text(
+                          'Tap to retry',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 9, color: Colors.red[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                // 이미지 업로드 완료 또는 기본 상태
+                : _imageBytes != null
+                // 업로드된 이미지 표시
+                ? ClipOval(
+                  child: Image.memory(
+                    _imageBytes!,
+                    fit: BoxFit.cover, // 상하 fit
+                    width: buttonSize,
+                    height: buttonSize,
+                    alignment: Alignment.topCenter, // 상단 정렬
+                  ),
+                )
+                // 기본 상태 - 점선 원과 아이콘 표시
                 : Stack(
                   alignment: Alignment.center,
                   children: [
@@ -884,19 +1318,16 @@ class _GenerateSectionState extends State<GenerateSection> {
                     Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // 기존의 + 아이콘 (크기 축소)
                         Icon(
                           Icons.add,
-                          size: buttonSize * 0.25, // 크기 축소
+                          size: buttonSize * 0.25,
                           color: AppColors.textSecondary,
                         ),
-                        // 간격 축소 (5px → 2px)
-                        SizedBox(height: 2),
-                        // your image 텍스트 크기 더 작게 설정
+                        const SizedBox(height: 2),
                         Text(
                           'your image',
                           style: TextStyle(
-                            fontSize: isMobile ? 8 : 10, // 모바일에서는 더 작게
+                            fontSize: isMobile ? 8 : 10,
                             color: AppColors.textSecondary,
                           ),
                         ),
@@ -911,14 +1342,15 @@ class _GenerateSectionState extends State<GenerateSection> {
   // 프리셋 버튼 위젯 (최근 선택한 한복 이미지)
   Widget _buildPresetButton(BuildContext context, String imagePath) {
     final bool isSelected = _selectedHanbokImage == imagePath;
-    
+
     // 반응형 크기 적용
     final presetSize = AppSizes.getPresetImageSize(context);
 
     // 외부 컨테이너 (외부 테두리)의 모서리 둥글기
     final double outerRadius = AppConstants.defaultCardBorderRadius;
     // 내부 이미지 컨테이너의 모서리 둥글기 (선택 시 약간 줄어듦)
-    final double innerRadius = isSelected ? 11 : AppConstants.defaultCardBorderRadius;
+    final double innerRadius =
+        isSelected ? 11 : AppConstants.defaultCardBorderRadius;
 
     return StatefulBuilder(
       builder: (context, setState) {
@@ -936,16 +1368,18 @@ class _GenerateSectionState extends State<GenerateSection> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(outerRadius),
                 border: Border.all(
-                  color: isSelected
-                              ? AppColors.primary
-                      : (isHovered
-                          ? AppColors.imageStrokeHover
-                          : AppColors.border.withOpacity(0.3)),
-                  width: isSelected
+                  color:
+                      isSelected
+                          ? AppColors.primary
+                          : (isHovered
+                              ? AppColors.imageStrokeHover
+                              : AppColors.border.withOpacity(0.3)),
+                  width:
+                      isSelected
                           ? AppConstants.borderWidthThick
-                      : (isHovered
-                          ? AppConstants.borderWidthHover
-                          : AppConstants.borderWidthThin),
+                          : (isHovered
+                              ? AppConstants.borderWidthHover
+                              : AppConstants.borderWidthThin),
                 ),
               ),
               child: ClipRRect(
@@ -955,34 +1389,35 @@ class _GenerateSectionState extends State<GenerateSection> {
                   children: [
                     // 이미지
                     Image.network(
-                  imagePath,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
+                      imagePath,
+                      fit: BoxFit.fitHeight, // 상하가 꽉 차도록 fitHeight 사용
+                      alignment: Alignment.center, // 중앙 정렬
                       loadingBuilder: (context, child, loadingProgress) {
                         if (loadingProgress == null) return child;
                         return Center(
                           child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
+                            value:
+                                loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
                           ),
                         );
                       },
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
                           color: AppColors.backgroundMedium,
-                          child: Center(
+                          child: const Center(
                             child: Icon(
                               Icons.broken_image,
                               size: 24,
                               color: AppColors.textSecondary,
-            ),
-          ),
-        );
-      },
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    
+
                     // 선택됨 표시 (체크 아이콘)
                     if (isSelected)
                       Positioned(
@@ -1007,7 +1442,7 @@ class _GenerateSectionState extends State<GenerateSection> {
             ),
           ),
         );
-      }
+      },
     );
   }
 
@@ -1015,12 +1450,14 @@ class _GenerateSectionState extends State<GenerateSection> {
   Widget _buildEmptyPresetButton(BuildContext context) {
     // 반응형 크기 적용
     final presetSize = AppSizes.getPresetImageSize(context);
-    
+
     return Container(
       width: presetSize,
       height: presetSize,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppConstants.defaultCardBorderRadius),
+        borderRadius: BorderRadius.circular(
+          AppConstants.defaultCardBorderRadius,
+        ),
         border: Border.all(
           color: AppColors.border.withOpacity(0.2),
           width: AppConstants.borderWidthThin,
@@ -1038,7 +1475,7 @@ class _GenerateSectionState extends State<GenerateSection> {
             ),
             const SizedBox(height: 8),
             Text(
-              '이미지 없음',
+              'No image',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary.withOpacity(0.5),
