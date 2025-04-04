@@ -47,3 +47,4 @@ app.*.map.json
 .env
 /assets/.env
 /supabase_services/.env
+.vercel
