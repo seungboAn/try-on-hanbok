@@ -115,6 +115,15 @@ class SupabaseService {
     }
   }
 
+  // 모든 프리셋 이미지를 한 번에 가져오기 (API 호출 최적화)
+  Future<List<HanbokImage>> getAllPresetImages() async {
+    debugPrint('Fetching all presets in a single API call...');
+    // 카테고리 매개변수 없이 'all'로 모든 프리셋을 한 번에 가져옴
+    final allPresets = await getPresetImages(category: 'all');
+    debugPrint('Retrieved ${allPresets.length} total presets in a single request');
+    return allPresets;
+  }
+
   // Sign in anonymously
   Future<String?> signInAnonymously() async {
     try {
@@ -208,14 +217,25 @@ class SupabaseService {
   }
 
   // 서버에서 결과 URL이 제공되지 않을 때 사용할 대체 이미지 URL 반환
-  Future<String?> getDefaultResultImage() async {
+  Future<String?> getDefaultResultImage({List<HanbokImage>? existingPresets}) async {
     try {
-      // 미리 저장된 기본 샘플 결과 이미지 반환
-      // 또는 최근에 선택된 한복 프리셋 이미지 반환
+      // 이미 로드된 프리셋이 있으면 재사용
+      if (existingPresets != null && existingPresets.isNotEmpty) {
+        debugPrint('Using existing presets for fallback image');
+        // 카테고리가 'modern'인 첫 번째 프리셋 찾기
+        final modernPreset = existingPresets.firstWhere(
+          (preset) => preset.category == 'modern',
+          orElse: () => existingPresets.first, // modern이 없으면 첫번째 아무거나 사용
+        );
+        debugPrint('Using fallback image: ${modernPreset.imagePath}');
+        return modernPreset.imagePath;
+      }
+      
+      // 프리셋이 제공되지 않은 경우에만 API 호출
       final modernPresets = await getPresetImages(category: 'modern');
       if (modernPresets.isNotEmpty) {
         // 첫 번째 모던 프리셋 이미지 반환 (임시 대체용)
-        debugPrint('Using fallback image from presets');
+        debugPrint('Using fallback image from API: ${modernPresets.first.imagePath}');
         return modernPresets.first.imagePath;
       }
 

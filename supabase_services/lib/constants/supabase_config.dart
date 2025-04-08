@@ -10,6 +10,7 @@ class SupabaseConfig {
   static String get getPresetImagesEndpoint => '$supabaseUrl/functions/v1/get-presets';
   static String get generateHanbokImageEndpoint => '$supabaseUrl/functions/v1/generate-hanbok-image';
   static String get checkStatusEndpoint => '$supabaseUrl/functions/v1/check-status';
+  static String get checkStatusSseEndpoint => '$supabaseUrl/functions/v1/check-status-sse';
   
   // Storage bucket paths
   static const String userImagesBucket = 'user-images';
