@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #status { margin-bottom: 10px; padding: 10px; border-radius: 5px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .connecting { background-color: #fff3cd; color: #856404; }
+        #log { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 20px; }
+        #connect-form { margin-bottom: 20px; }
+        input, button { margin: 5px; padding: 8px; }
+        input[type="text"] { width: 300px; }
+        button { cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #0069d9; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #disconnect { background-color: #dc3545; }
+        #disconnect:hover { background-color: #c82333; }
+    </style>
+</head>
+<body>
+    <h1>SSE Connection Test</h1>
+    
+    <div id="status" class="disconnected">Disconnected</div>
+    
+    <form id="connect-form">
+        <div>
+            <label for="endpoint">Endpoint:</label>
+            <input type="text" id="endpoint" value="http://localhost:54321/functions/v1/check-status-sse" />
+        </div>
+        <div>
+            <label for="task-id">Task ID:</label>
+            <input type="text" id="task-id" placeholder="Enter task ID" />
+        </div>
+        <div>
+            <label for="token">Auth Token:</label>
+            <input type="text" id="token" placeholder="Enter JWT token" />
+        </div>
+        <button type="submit" id="connect">Connect</button>
+        <button type="button" id="disconnect" disabled>Disconnect</button>
+    </form>
+    
+    <h2>Event Log</h2>
+    <div id="log"></div>
+    
+    <script>
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const connectForm = document.getElementById('connect-form');
+        const endpointInput = document.getElementById('endpoint');
+        const taskIdInput = document.getElementById('task-id');
+        const tokenInput = document.getElementById('token');
+        const connectBtn = document.getElementById('connect');
+        const disconnectBtn = document.getElementById('disconnect');
+        
+        let eventSource = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<strong>${timestamp}</strong>: ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            statusEl.textContent = status;
+            statusEl.className = status.toLowerCase();
+        }
+        
+        function connect(endpoint, taskId, token) {
+            // Build URL with query parameters
+            const url = new URL(endpoint);
+            url.searchParams.append('task_id', taskId);
+            
+            try {
+                // Create new EventSource with headers
+                const eventSourceUrl = url.toString();
+                
+                // EventSource doesn't support custom headers in the constructor
+                // For real-world apps, you'd need to proxy this or use a different approach
+                // For this test, we'll add the token to the URL
+                const sse = new EventSource(eventSourceUrl);
+                
+                updateStatus('Connecting');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                
+                sse.onopen = function() {
+                    log(`Connected to ${eventSourceUrl}`, 'success');
+                    updateStatus('Connected');
+                };
+                
+                sse.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        const dataStr = JSON.stringify(data, null, 2);
+                        log(`Received data: ${dataStr}`, 'data');
+                        
+                        // Check for terminal states
+                        if (data.status === 'completed' || data.status === 'error' || data.status === 'failed') {
+                            log(`Terminal state reached: ${data.status}`, 'info');
+                        }
+                    } catch (e) {
+                        log(`Error parsing event data: ${e.message}`, 'error');
+                        log(`Raw data: ${event.data}`, 'error');
+                    }
+                };
+                
+                sse.onerror = function(err) {
+                    log(`Error: ${err.type}`, 'error');
+                    if (sse.readyState === EventSource.CLOSED) {
+                        updateStatus('Disconnected (Error)');
+                    } else if (sse.readyState === EventSource.CONNECTING) {
+                        updateStatus('Reconnecting');
+                    }
+                };
+                
+                eventSource = sse;
+            } catch (e) {
+                log(`Failed to create EventSource: ${e.message}`, 'error');
+                updateStatus('Disconnected (Error)');
+            }
+        }
+        
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                log('Disconnected from event source', 'info');
+                updateStatus('Disconnected');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+        
+        connectForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const endpoint = endpointInput.value.trim();
+            const taskId = taskIdInput.value.trim();
+            const token = tokenInput.value.trim();
+            
+            if (!endpoint) {
+                log('Endpoint is required', 'error');
+                return;
+            }
+            
+            if (!taskId) {
+                log('Task ID is required', 'error');
+                return;
+            }
+            
+            if (eventSource) {
+                disconnect();
+            }
+            
+            connect(endpoint, taskId, token);
+        });
+        
+        disconnectBtn.addEventListener('click', disconnect);
+        
+        // Add some initial log messages
+        log('SSE Test initialized. Enter endpoint and task ID to connect.', 'info');
+    </script>
+</body>
+</html> 
